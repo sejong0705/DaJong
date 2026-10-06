@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DawnAir 테스트</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1f2a44">
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; }
+    button { font-size: 16px; padding: 12px 20px; margin: 8px 0; width: 100%; }
+    #log { background: #f2f2f2; padding: 12px; font-size: 14px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>DawnAir 배포 테스트</h1>
+  <p>이 화면이 보이면 Amplify 배포 성공이에요.</p>
+
+  <button id="speak">한국어 음성 테스트</button>
+  <div id="log"></div>
+
+  <script>
+    const log = (msg) => { document.getElementById('log').textContent += msg + '\n'; };
+
+    log('HTTPS 여부: ' + (location.protocol === 'https:' ? 'O' : 'X'));
+
+    // Service Worker 등록 (PWA 조건)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(() => log('Service Worker 등록: O'))
+        .catch((e) => log('Service Worker 등록 실패: ' + e));
+    } else {
+      log('이 브라우저는 Service Worker 미지원');
+    }
+
+    // Web Speech API 테스트
+    document.getElementById('speak').addEventListener('click', () => {
+      if (!('speechSynthesis' in window)) { log('Web Speech API 미지원'); return; }
+      const u = new SpeechSynthesisUtterance('좋은 아침입니다. 도운에어 아침 브리핑을 시작합니다.');
+      u.lang = 'ko-KR';
+      const ko = speechSynthesis.getVoices().filter(v => v.lang.startsWith('ko'));
+      log('한국어 음성 개수: ' + ko.length);
+      if (ko[0]) u.voice = ko[0];
+      speechSynthesis.speak(u);
+    });
+  </script>
+</body>
+</html>
