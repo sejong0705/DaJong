@@ -1,0 +1,95 @@
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo-word {
+  font-size: 21px;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.logo-word b {
+  font-weight: 700;
+}
+.logo-word span {
+  font-weight: 300;
+}
+
+.logo-mark {
+  overflow: visible;
+}
+
+.logo-wave {
+  fill: none;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+.logo-wave--outer {
+  stroke: var(--wave-outer);
+  stroke-opacity: 0.35;
+}
+.logo-wave--inner {
+  stroke: var(--wave-inner);
+  stroke-opacity: 0.65;
+}
+
+.logo-glow {
+  fill: #FFB896;
+  opacity: 0.45;
+}
+
+/* ---------- 등장 애니메이션 (피그마 LogoIntro Step 1→4) ---------- */
+.logo-mark.is-animated .logo-orb,
+.logo-mark.is-animated .logo-glow,
+.logo-mark.is-animated .logo-wave {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.logo-mark.is-animated .logo-orb {
+  animation: logo-orb-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.3s both;
+}
+.logo-mark.is-animated .logo-glow {
+  animation: logo-glow-in 0.9s ease-out 0.3s both;
+}
+.logo-mark.is-animated .logo-wave--inner {
+  animation: logo-wave-in 0.45s ease-out 1.05s both;
+}
+.logo-mark.is-animated .logo-wave--outer {
+  animation: logo-wave-in 0.45s ease-out 1.55s both;
+}
+
+@keyframes logo-orb-in {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes logo-glow-in {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+}
+
+@keyframes logo-wave-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

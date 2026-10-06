@@ -1,0 +1,109 @@
+/*
+ * DawnAir 디자인 토큰
+ * 피그마 "DawnAir Tokens" 변수 컬렉션(Light / Dark)과 이름을 1:1로 맞췄어요.
+ * 피그마 변수 bg/page → CSS 변수 --bg-page
+ *
+ * 테마 적용 규칙
+ *   1) <html data-theme="light|dark"> 가 있으면 그 값을 따른다 (사용자가 직접 고른 경우)
+ *   2) 없으면 OS 설정(prefers-color-scheme)을 따른다
+ */
+
+:root {
+  /* ---------- Light (기본) ---------- */
+  --bg-page: #F7F5F2;
+  --bg-surface: #FFFFFF;
+  --bg-night: #1B1F3B;
+
+  --text-primary: #1B1F3B;
+  --text-secondary: #6B6F80;
+  --text-inverse: #FFFFFF;
+
+  --accent-default: #FF8A3D;
+  --accent-soft: #FFF1E6;
+  --accent-strong: #D9621A;
+
+  --border-default: #E7E4DF;
+
+  /* 방송(재생) 화면 */
+  --player-bg: #FBF7F2;
+  --player-text-muted: #8C857C;
+  --player-highlight: #5B74D6;
+  --player-control: #2A2520;
+  --player-on-control: #FFFFFF;
+
+  /* 로고 · orb (모드와 관계없이 동일) */
+  --orb-1: #FFF7EE;
+  --orb-2: #FFCB9F;
+  --orb-3: #F6A28F;
+  --orb-4: #E696A6;
+  --orb-glow: #F6A28F;
+  --wave-inner: #F29C86;
+  --wave-outer: #F4A88A;
+
+  /* 히어로 카드 그라데이션 */
+  --hero-gradient: linear-gradient(160deg, #1B1F3B 0%, #4B3F72 60%, #E07A4A 100%);
+
+  /* 타이포 */
+  --font-sans: 'Noto Sans KR', system-ui, -apple-system, sans-serif;
+  --fs-display-xl: 36px;
+  --fs-display: 24px;
+  --fs-title: 18px;
+  --fs-subtitle: 16px;
+  --fs-body: 15px;
+  --fs-caption: 12px;
+
+  /* 간격 · 모서리 */
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --content-max: 1120px;
+
+  /* 고정 바 높이 */
+  --topnav-h: 72px;
+  --playerbar-h: 84px;
+  --bottomnav-h: 72px;
+
+  color-scheme: light;
+}
+
+/* ---------- Dark ---------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg-page: #15130F;
+    --bg-surface: #201D19;
+    --bg-night: #3A342C;
+    --text-primary: #F3EEE6;
+    --text-secondary: #A39C93;
+    --text-inverse: #FFFFFF;
+    --accent-default: #FF9A5A;
+    --accent-soft: #3A2A1F;
+    --accent-strong: #FFB27D;
+    --border-default: #2E2A25;
+    --player-bg: #16130F;
+    --player-text-muted: #A39C93;
+    --player-highlight: #AFC3FF;
+    --player-control: #EFE8DD;
+    --player-on-control: #16130F;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg-page: #15130F;
+  --bg-surface: #201D19;
+  --bg-night: #3A342C;
+  --text-primary: #F3EEE6;
+  --text-secondary: #A39C93;
+  --text-inverse: #FFFFFF;
+  --accent-default: #FF9A5A;
+  --accent-soft: #3A2A1F;
+  --accent-strong: #FFB27D;
+  --border-default: #2E2A25;
+  --player-bg: #16130F;
+  --player-text-muted: #A39C93;
+  --player-highlight: #AFC3FF;
+  --player-control: #EFE8DD;
+  --player-on-control: #16130F;
+  color-scheme: dark;
+}

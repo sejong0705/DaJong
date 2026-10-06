@@ -1,0 +1,206 @@
+// 06 방송 화면 (재생) — 하단 재생바를 누르면 열려요
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import Icon from '../components/Icon'
+import Logo from '../components/Logo'
+import BroadcastOrb from '../components/BroadcastOrb'
+import { getBriefing } from '../api/briefing'
+import { usePlayer } from '../context/PlayerContext'
+import { currentHourKST, dateParts, formatClock, formatDuration, formatLongDate, todayKey } from '../utils/date'
+import './PlayerPage.css'
+
+function greeting() {
+  const h = currentHourKST()
+  if (h < 12) return '좋은 아침이에요.'
+  if (h < 18) return '오늘 아침 소식, 다시 들어볼까요?'
+  return '오늘 하루 수고 많았어요.'
+}
+
+export default function PlayerPage() {
+  const player = usePlayer()
+  const { briefing, isPlaying, currentTime, duration, rate } = player
+  const navigate = useNavigate()
+  const [showChapters, setShowChapters] = useState(false)
+  const [missing, setMissing] = useState(false)
+
+  // 주소로 바로 들어온 경우: 오늘 방송을 플레이어에 올려둠 (자동 재생은 안 함)
+  useEffect(() => {
+    if (briefing) return
+    getBriefing(todayKey()).then((b) => (b ? player.load(b) : setMissing(true)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [briefing])
+
+  const chapters = useMemo(() => {
+    if (!briefing) return []
+    const list = [{ time: 0, title: '오프닝' }, ...briefing.headlines.filter((h) => h.time > 0)]
+    return list
+  }, [briefing])
+
+  const close = () => (window.history.state?.idx > 0 ? navigate(-1) : navigate('/'))
+
+  if (!briefing) {
+    return (
+      <div className="player-page">
+        <div className="player-page__empty">
+          <p>{missing ? '아직 오늘 방송이 없어요.' : '방송을 불러오는 중…'}</p>
+          <Link to="/" className="btn btn--ghost">
+            홈으로
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  const total = duration || briefing.duration || 0
+  const current = chapters.findLastIndex((c) => c.time <= currentTime)
+  const { month, day } = dateParts(briefing.date)
+  const w = briefing.weather
+
+  const prevChapter = () => {
+    const c = chapters[current]
+    // 챕터 시작 3초 이후면 그 챕터 처음으로, 아니면 이전 챕터로
+    if (c && currentTime - c.time > 3) player.seek(c.time)
+    else player.seek(chapters[Math.max(0, current - 1)]?.time ?? 0)
+  }
+  const nextChapter = () => {
+    const n = chapters[current + 1]
+    if (n) player.seek(n.time)
+  }
+  const goChapter = (t) => {
+    player.seek(t)
+    if (!isPlaying) player.play()
+  }
+
+  return (
+    <div className="player-page">
+      <span className="player-page__handle only-mobile-block" aria-hidden="true" />
+      <header className="player-page__header container">
+        <Logo />
+        <div className="player-page__header-actions">
+          <Link to="/history" aria-label="지난 방송">
+            <Icon name="history" size={24} />
+          </Link>
+          <button type="button" className="player-page__close" onClick={close}>
+            <Icon name="chevronDown" size={18} />
+            <span>접기</span>
+          </button>
+        </div>
+      </header>
+
+      <div className="player-page__body container">
+        <section className="now-playing" aria-label="지금 재생 중">
+          <BroadcastOrb size={typeof window !== 'undefined' && window.innerWidth < 768 ? 200 : 240} />
+
+          <h1 className="now-playing__greeting">{greeting()}</h1>
+          <p className="now-playing__muted">
+            {formatLongDate(briefing.date)}
+            {w ? ` · ${w.region} ${w.min}°~${w.max}°` : ''}
+          </p>
+
+          <p className="now-playing__episode">
+            {String(day).padStart(2, '0')} · {month}월 {day}일 아침
+          </p>
+          <p className="now-playing__muted">
+            {formatDuration(total)} · 날씨와 {briefing.headlines.filter((h) => h.category !== '날씨').length}개 소식
+          </p>
+
+          <div className="controls">
+            <button type="button" onClick={prevChapter} aria-label="이전 챕터">
+              <Icon name="prev" size={26} />
+            </button>
+            <button type="button" className="controls__skip" onClick={() => player.skip(-15)} aria-label="15초 뒤로">
+              <Icon name="rewind" size={36} />
+              <span>15</span>
+            </button>
+            <button type="button" className="controls__play" onClick={player.toggle} aria-label={isPlaying ? '일시정지' : '재생'}>
+              <Icon name={isPlaying ? 'pause' : 'play'} size={32} />
+            </button>
+            <button type="button" className="controls__skip" onClick={() => player.skip(15)} aria-label="15초 앞으로">
+              <Icon name="forward" size={36} />
+              <span>15</span>
+            </button>
+            <button type="button" onClick={nextChapter} disabled={current >= chapters.length - 1} aria-label="다음 챕터">
+              <Icon name="next" size={26} />
+            </button>
+          </div>
+
+          <ChapterProgress chapters={chapters} total={total} currentTime={currentTime} onSeek={player.seek} />
+          <div className="now-playing__times">
+            <span>{formatClock(currentTime)}</span>
+            <span>{formatClock(total)}</span>
+          </div>
+
+          {player.error && <p className="now-playing__error">{player.error}</p>}
+
+          <div className="now-playing__bottom">
+            <button type="button" onClick={player.cycleRate}>
+              {Number.isInteger(rate) ? rate.toFixed(1) : rate}×
+            </button>
+            <button type="button" className="only-mobile-flex" onClick={() => setShowChapters((v) => !v)} aria-expanded={showChapters}>
+              <Icon name="chapters" size={20} /> 목차 {chapters.length}
+            </button>
+          </div>
+        </section>
+
+        <section className={`chapters${showChapters ? ' is-open' : ''}`} aria-label="목차">
+          <div className="chapters__header">
+            <h2>목차</h2>
+            <span>{chapters.length}개 챕터</span>
+          </div>
+          <ol>
+            {chapters.map((c, i) => (
+              <li key={c.time}>
+                <button type="button" className={`chapters__item${i === current ? ' is-active' : ''}`} onClick={() => goChapter(c.time)}>
+                  <span className="chapters__time">{formatClock(c.time)}</span>
+                  <span className="chapters__title">{c.title}</span>
+                  {i === current && <span className="chapters__now">재생 중</span>}
+                </button>
+              </li>
+            ))}
+          </ol>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+/** 챕터별로 나뉜 진행바 */
+function ChapterProgress({ chapters, total, currentTime, onSeek }) {
+  if (!total) return <div className="chapter-progress" />
+  const parts = chapters.map((c, i) => {
+    const end = chapters[i + 1]?.time ?? total
+    const len = Math.max(0, end - c.time)
+    const played = Math.min(len, Math.max(0, currentTime - c.time))
+    return { start: c.time, len, ratio: len ? played / len : 0 }
+  })
+
+  const onClick = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    onSeek(((e.clientX - rect.left) / rect.width) * total)
+  }
+
+  return (
+    <div
+      className="chapter-progress"
+      onClick={onClick}
+      role="slider"
+      aria-label="재생 위치"
+      aria-valuemin={0}
+      aria-valuemax={Math.round(total)}
+      aria-valuenow={Math.round(currentTime)}
+      aria-valuetext={formatClock(currentTime)}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowRight') onSeek(currentTime + 5)
+        if (e.key === 'ArrowLeft') onSeek(currentTime - 5)
+      }}
+    >
+      {parts.map((p) => (
+        <span key={p.start} className="chapter-progress__seg" style={{ flexGrow: p.len }}>
+          <span style={{ width: `${p.ratio * 100}%` }} />
+        </span>
+      ))}
+      <span className="chapter-progress__knob" style={{ left: `${(currentTime / total) * 100}%` }} />
+    </div>
+  )
+}

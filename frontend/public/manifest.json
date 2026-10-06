@@ -1,0 +1,12 @@
+{
+  "name": "DawnAir",
+  "short_name": "DawnAir",
+  "description": "오늘 아침, 귀로 듣는 브리핑",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#F7F5F2",
+  "theme_color": "#F7F5F2",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

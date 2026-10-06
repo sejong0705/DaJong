@@ -1,0 +1,112 @@
+/* ---------- TopNav ---------- */
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--topnav-h);
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.topnav__inner {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.topnav__left {
+  display: flex;
+  align-items: center;
+  gap: 48px;
+}
+
+.topnav__links {
+  display: flex;
+  gap: 8px;
+}
+
+.topnav__link {
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+.topnav__link:hover {
+  color: var(--text-primary);
+}
+.topnav__link.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.topnav__right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.topnav__date {
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.theme-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+.theme-toggle:hover {
+  color: var(--text-primary);
+}
+
+/* ---------- BottomNav ---------- */
+.bottomnav {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .topnav {
+    height: 60px;
+  }
+  .topnav__links,
+  .topnav__date {
+    display: none;
+  }
+
+  .bottomnav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: flex;
+    height: var(--bottomnav-h);
+    padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border-default);
+  }
+
+  .bottomnav__tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--fs-caption);
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+  .bottomnav__tab.active {
+    color: var(--accent-strong);
+  }
+  .bottomnav__tab.active svg {
+    color: var(--accent-default);
+  }
+}
