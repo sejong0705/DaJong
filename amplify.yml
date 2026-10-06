@@ -5,7 +5,7 @@ applications:
       phases:
         build:
           commands:
-            - echo "정적 파일이라 빌드 없음"
+            - echo "no build"
       artifacts:
         baseDirectory: .
         files:
