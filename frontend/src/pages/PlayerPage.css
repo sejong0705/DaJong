@@ -1,0 +1,324 @@
+.player-page {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow-y: auto;
+  background: var(--player-bg);
+  color: var(--text-primary);
+  animation: player-up 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes player-up {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.player-page__empty {
+  min-height: 100%;
+  display: grid;
+  place-content: center;
+  gap: 16px;
+  text-align: center;
+  color: var(--player-text-muted);
+}
+
+.player-page__header {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.player-page__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  color: var(--player-text-muted);
+}
+
+.player-page__close {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  color: var(--player-text-muted);
+}
+
+.player-page__body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 80px;
+  padding-top: 24px;
+  padding-bottom: 48px;
+}
+
+/* ---------- 지금 재생 중 ---------- */
+.now-playing {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.now-playing__greeting {
+  margin-top: 24px;
+  font-size: var(--fs-display-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.now-playing__muted {
+  margin-top: 6px;
+  color: var(--player-text-muted);
+}
+
+.now-playing__episode {
+  margin-top: 24px;
+  font-size: var(--fs-title);
+  font-weight: 700;
+  color: var(--player-highlight);
+}
+
+.controls {
+  margin-top: 32px;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--player-control);
+}
+.controls button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.controls__skip {
+  position: relative;
+  width: 36px;
+  height: 36px;
+}
+.controls__skip span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding-top: 2px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.controls__play {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--player-control);
+  color: var(--player-on-control);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 8px 28px rgba(228, 128, 92, 0.22);
+  transition: transform 0.15s;
+}
+.controls__play:active {
+  transform: scale(0.96);
+}
+
+/* ---------- 챕터 진행바 ---------- */
+.chapter-progress {
+  position: relative;
+  margin-top: 36px;
+  width: 100%;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.chapter-progress__seg {
+  flex-basis: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--player-control) 15%, transparent);
+  overflow: hidden;
+}
+.chapter-progress__seg span {
+  display: block;
+  height: 100%;
+  background: var(--player-control);
+}
+
+.chapter-progress__knob {
+  position: absolute;
+  top: 1px;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border-radius: 50%;
+  background: var(--player-control);
+  pointer-events: none;
+}
+
+.now-playing__times {
+  width: 100%;
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  color: var(--player-text-muted);
+}
+
+.now-playing__error {
+  margin-top: 12px;
+  font-size: var(--fs-caption);
+  color: var(--accent-strong);
+}
+
+.now-playing__bottom {
+  width: 100%;
+  margin-top: 20px;
+  display: flex;
+  justify-content: space-between;
+  font-weight: 500;
+  color: var(--player-text-muted);
+}
+.now-playing__bottom button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- 목차 패널 ---------- */
+.chapters {
+  width: 440px;
+  flex-shrink: 0;
+  padding: 24px 20px;
+  border-radius: 24px;
+  background: var(--bg-surface);
+  box-shadow: 0 8px 32px rgba(138, 106, 85, 0.08);
+}
+
+.chapters__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 12px 12px;
+}
+.chapters__header h2 {
+  font-size: var(--fs-subtitle);
+  font-weight: 500;
+}
+.chapters__header span {
+  font-size: var(--fs-caption);
+  color: var(--player-text-muted);
+}
+
+.chapters ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chapters__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 12px;
+  border-radius: 14px;
+  text-align: left;
+  color: var(--player-text-muted);
+}
+.chapters__item:hover {
+  color: var(--text-primary);
+}
+.chapters__item.is-active {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.chapters__time {
+  flex: 0 0 40px;
+  font-size: var(--fs-caption);
+  font-weight: 500;
+}
+.chapters__item.is-active .chapters__time,
+.chapters__now {
+  color: var(--player-highlight);
+}
+.chapters__title {
+  flex: 1;
+}
+.chapters__now {
+  font-size: var(--fs-caption);
+}
+
+.only-mobile-block,
+.only-mobile-flex {
+  display: none;
+}
+
+/* ---------- 모바일: 아래에서 올라오는 시트 ---------- */
+@media (max-width: 1023px) {
+  .player-page__body {
+    flex-direction: column;
+    gap: 24px;
+  }
+  .chapters {
+    width: 100%;
+    max-width: 520px;
+  }
+}
+
+@media (max-width: 767px) {
+  .only-mobile-block {
+    display: block;
+  }
+  .only-mobile-flex {
+    display: inline-flex;
+  }
+
+  .player-page__handle {
+    width: 36px;
+    height: 4px;
+    margin: 12px auto 0;
+    border-radius: 2px;
+    background: var(--player-text-muted);
+    opacity: 0.35;
+  }
+
+  .player-page__close span {
+    display: none;
+  }
+
+  .player-page__body {
+    padding-top: 8px;
+  }
+
+  .now-playing__greeting {
+    font-size: 30px;
+  }
+
+  /* 목차는 버튼을 눌렀을 때만 */
+  .chapters {
+    display: none;
+  }
+  .chapters.is-open {
+    display: block;
+  }
+}

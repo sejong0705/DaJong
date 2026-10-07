@@ -3,10 +3,17 @@ applications:
   - appRoot: frontend
     frontend:
       phases:
+        preBuild:
+          commands:
+            # package-lock.json 이 있으면 npm ci (더 빠르고 버전 고정), 없으면 npm install
+            - if [ -f package-lock.json ]; then npm ci; else npm install; fi
         build:
           commands:
-            - echo "no build"
+            - npm run build
       artifacts:
-        baseDirectory: .
+        baseDirectory: dist
         files:
           - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
