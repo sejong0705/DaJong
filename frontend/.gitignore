@@ -4,4 +4,4 @@ dist
 .env.local
 *.log
 .DS_Store
-public/sample/*.mp3
+#public/sample/*.mp3
