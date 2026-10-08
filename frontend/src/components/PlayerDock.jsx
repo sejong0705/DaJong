@@ -3,7 +3,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from './Icon'
 import { usePlayer } from '../context/PlayerContext'
-import { dateParts, formatClock } from '../utils/date'
+import { dateParts, formatClock, formatRate } from '../utils/date'
 import './PlayerDock.css'
 
 export default function PlayerDock() {
@@ -61,7 +61,7 @@ export default function PlayerDock() {
 
         <div className="player-dock__actions only-desktop">
           <button type="button" className="pill" onClick={cycleRate}>
-            {rate}x
+            {formatRate(rate)}
           </button>
           <Link to={`/script/${briefing.date}`} className="pill">
             대본 보기

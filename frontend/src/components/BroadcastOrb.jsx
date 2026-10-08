@@ -10,7 +10,8 @@ import './BroadcastOrb.css'
  *   --level : 볼륨 (glow 크기와 밝기)
  *   --dx/--dy, --rx/--ry : glow 두 겹이 천천히 떠다니는 위치 (볼륨이 클수록 크게 움직임)
  */
-export default function BroadcastOrb({ size = 240 }) {
+/** size 를 주지 않으면 CSS 변수 --size 를 따라요 (화면 크기별 크기는 CSS 에서) */
+export default function BroadcastOrb({ size }) {
   const { isPlaying, getLevel } = usePlayer()
   const ref = useRef(null)
   const playingRef = useRef(isPlaying)
@@ -46,7 +47,7 @@ export default function BroadcastOrb({ size = 240 }) {
     <div
       ref={ref}
       className={`broadcast-orb${isPlaying ? ' is-playing' : ''}`}
-      style={{ '--size': `${size}px` }}
+      style={size ? { '--size': `${size}px` } : undefined}
       aria-hidden="true"
     >
       <div className="broadcast-orb__glow" />

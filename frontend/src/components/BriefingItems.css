@@ -27,7 +27,9 @@
 .headline-list li:last-child .headline {
   border-bottom: 0;
 }
-.headline:hover .headline__title {
+.headline:hover .headline__title,
+.headline.is-active .headline__title,
+.headline.is-active .headline__time {
   color: var(--accent-strong);
 }
 

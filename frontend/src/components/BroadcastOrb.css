@@ -1,4 +1,5 @@
 .broadcast-orb {
+  --size: 240px;
   --level: 0;
   --dx: 0px;
   --dy: 0px;

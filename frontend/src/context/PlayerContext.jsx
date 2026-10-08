@@ -72,11 +72,17 @@ export function PlayerProvider({ children }) {
 
   const seek = useCallback(
     (sec) => {
-      const max = audio.duration || duration || 0
-      audio.currentTime = Math.min(Math.max(0, sec), max)
-      setCurrentTime(audio.currentTime)
+      // 방금 load() 한 직후엔 메타데이터가 없어서 duration 이 NaN 이에요 → 이때는 위쪽 제한 없이 둠
+      const max = Number.isFinite(audio.duration) ? audio.duration : Infinity
+      const t = Math.min(Math.max(0, sec), max)
+      audio.currentTime = t
+      // 일부 브라우저(Safari)는 메타데이터 전에 바꾼 위치를 무시해서, 로드되면 한 번 더 맞춰요
+      if (audio.readyState === 0) {
+        audio.addEventListener('loadedmetadata', () => (audio.currentTime = t), { once: true })
+      }
+      setCurrentTime(t)
     },
-    [audio, duration],
+    [audio],
   )
 
   const skip = useCallback((delta) => seek(audio.currentTime + delta), [audio, seek])

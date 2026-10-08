@@ -314,6 +314,10 @@
     font-size: 30px;
   }
 
+  .now-playing .broadcast-orb {
+    --size: 200px;
+  }
+
   /* 목차는 버튼을 눌렀을 때만 */
   .chapters {
     display: none;
