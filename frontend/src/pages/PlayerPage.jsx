@@ -169,8 +169,10 @@ export default function PlayerPage() {
 /** 챕터별로 나뉜 진행바 */
 function ChapterProgress({ chapters, total, currentTime, onSeek }) {
   if (!total) return <div className="chapter-progress" />
-  const parts = chapters.map((c, i) => {
-    const end = chapters[i + 1]?.time ?? total
+  // 음원이 목차보다 짧을 수 있어서, 음원 길이 안에 있는 챕터만 그리고 끝은 음원 길이에서 잘라요
+  const inRange = chapters.filter((c, i) => i === 0 || c.time < total)
+  const parts = inRange.map((c, i) => {
+    const end = Math.min(inRange[i + 1]?.time ?? total, total)
     const len = Math.max(0, end - c.time)
     const played = Math.min(len, Math.max(0, currentTime - c.time))
     return { start: c.time, len, ratio: len ? played / len : 0 }
