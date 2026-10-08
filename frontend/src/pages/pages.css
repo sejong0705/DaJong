@@ -62,6 +62,10 @@
 .today__bottom {
   margin-top: 32px;
 }
+/* 날씨 카드가 없으면 히어로가 한 줄을 다 써요 */
+.today__top--single {
+  grid-template-columns: 1fr;
+}
 
 .hero {
   display: flex;
@@ -460,7 +464,8 @@
 .calendar__day.has-episode i {
   background: var(--accent-default);
 }
-.calendar__day.has-episode:hover {
+/* 오늘 칸은 어두운 배경 + 흰 글자라 hover 배경을 바꾸지 않아요 */
+.calendar__day.has-episode:not(.is-today):hover {
   background: var(--accent-soft);
 }
 .calendar__day.is-today {
@@ -539,8 +544,10 @@
     flex-direction: column;
   }
 
+  /* 아주 좁은 화면(320px)에서도 7칸이 카드 안에 들어가게 */
   .calendar__day {
-    width: 40px;
+    width: 100%;
+    max-width: 40px;
     height: 44px;
   }
 

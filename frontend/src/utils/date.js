@@ -58,3 +58,8 @@ export function formatDuration(sec = 0) {
   const s = Math.round(sec)
   return `${Math.floor(s / 60)}분 ${s % 60}초`
 }
+
+/** 재생 속도 1 → '1.0×', 1.25 → '1.25×' (재생바 · 방송 화면 공통) */
+export function formatRate(rate = 1) {
+  return `${Number.isInteger(rate) ? rate.toFixed(1) : rate}×`
+}

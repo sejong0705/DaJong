@@ -15,7 +15,10 @@ export default function ScriptPage() {
     const [briefing, script] = await Promise.all([getBriefing(date), getScript(date)])
     return { briefing, script }
   }, [date])
-  const [filter, setFilter] = useState('전체')
+  // 필터는 날짜별로 기억해서, 다른 날짜로 넘어가면 '전체'로 돌아가요
+  const [picked, setPicked] = useState({ date, value: '전체' })
+  const filter = picked.date === date ? picked.value : '전체'
+  const setFilter = (value) => setPicked({ date, value })
   const player = usePlayer()
 
   const segments = useMemo(() => data?.script?.segments ?? [], [data])
