@@ -1,0 +1,60 @@
+// Step Functions 상태 머신 정의에 아래와 같이 설정하기
+
+{
+  "Comment": "DawnAir 아침 브리핑: 수집(병렬) → 대본 생성 → 음성 합성(Polly) → 저장",
+  "StartAt": "Collect",
+  "States": {
+    "Collect": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "CollectWeather",
+          "States": {
+            "CollectWeather": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:ap-northeast-2:443370697536:function:sgu-20260918-collect-weather",
+              "TimeoutSeconds": 120,
+              "Retry": [{"ErrorEquals": ["States.ALL"], "IntervalSeconds": 10, "MaxAttempts": 2, "BackoffRate": 2}],
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "CollectNews",
+          "States": {
+            "CollectNews": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:ap-northeast-2:443370697536:function:sgu-20260918-collect-news",
+              "TimeoutSeconds": 200,
+              "Retry": [{"ErrorEquals": ["States.ALL"], "IntervalSeconds": 15, "MaxAttempts": 2, "BackoffRate": 2}],
+              "End": true
+            }
+          }
+        }
+      ],
+      "Next": "WriteScript"
+    },
+    "WriteScript": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:ap-northeast-2:443370697536:function:sgu-20260918-write-script",
+      "TimeoutSeconds": 330,
+      "Retry": [{"ErrorEquals": ["States.ALL"], "IntervalSeconds": 30, "MaxAttempts": 1}],
+      "Next": "TextToSpeech"
+    },
+    "TextToSpeech": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:ap-northeast-2:443370697536:function:sgu-20260918-tts-briefing",
+      "TimeoutSeconds": 150,
+      "Retry": [{"ErrorEquals": ["States.ALL"], "IntervalSeconds": 10, "MaxAttempts": 2, "BackoffRate": 2}],
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.ttsError", "Next": "SaveBriefing"}],
+      "Next": "SaveBriefing"
+    },
+    "SaveBriefing": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:ap-northeast-2:443370697536:function:sgu-20260918-save-briefing",
+      "TimeoutSeconds": 60,
+      "Retry": [{"ErrorEquals": ["States.ALL"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}],
+      "End": true
+    }
+  }
+}

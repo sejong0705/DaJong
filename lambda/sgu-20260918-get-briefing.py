@@ -21,6 +21,7 @@ import boto3
 KST = timezone(timedelta(hours=9))
 BUCKET = os.environ["BUCKET"]
 TABLE = os.environ.get("TABLE", "DawnAirBriefing")
+AUDIO_URL_TTL = 3600  # 음성 임시 주소 유효 시간(초)
 
 s3 = boto3.client("s3")
 table = boto3.resource("dynamodb").Table(TABLE)
@@ -66,7 +67,12 @@ def get_briefing(date):
     if not meta:
         return None
     obj = s3.get_object(Bucket=BUCKET, Key=meta["scriptKey"])
-    return {"meta": meta, "script": json.loads(obj["Body"].read())}
+    script = json.loads(obj["Body"].read())
+    # Polly 음성이 있으면 재생용 임시 주소(1시간)를 붙여 줌. 버킷은 비공개 그대로
+    for a in (script.get("audio") or {}).values():
+        a["url"] = s3.generate_presigned_url(
+            "get_object", Params={"Bucket": BUCKET, "Key": a["key"]}, ExpiresIn=AUDIO_URL_TTL)
+    return {"meta": meta, "script": script}
 
 
 def lambda_handler(event, context):
@@ -79,7 +85,7 @@ def lambda_handler(event, context):
         b = get_briefing(q["date"])
         if not b:
             return respond(404, {"error": f"{q['date']} 방송이 없습니다."})
-        return respond(200, b, cache=86400)  # 지난 방송은 바뀌지 않음
+        return respond(200, b, cache=300)  # 음성 임시 주소가 1시간이라 길게 캐시하지 않음
 
     # 기본: 오늘 방송. 아직 없으면(새벽 생성 전) 가장 최근 방송
     b = get_briefing(datetime.now(KST).strftime("%Y-%m-%d"))
