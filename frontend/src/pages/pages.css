@@ -403,6 +403,40 @@
   font-size: 17px;
   line-height: 1.75;
 }
+.segment__title {
+  font-size: 19px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+.segment__points {
+  margin: 0;
+  padding-left: 1.2em;
+  font-size: 17px;
+  line-height: 1.75;
+}
+.segment__extra {
+  margin-top: 14px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.segment__extra b {
+  display: block;
+  margin-bottom: 2px;
+  font-size: var(--fs-caption);
+  color: var(--accent-strong);
+}
+.segment__sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 14px;
+  font-size: var(--fs-caption);
+}
+.segment__sources a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+}
 
 /* ---------- 03 지난 방송 ---------- */
 .history__layout {

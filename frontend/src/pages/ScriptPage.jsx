@@ -102,7 +102,39 @@ export default function ScriptPage() {
                 <CategoryChip label={s.category} />
                 {active && <span className="segment__now">▶ 재생 중</span>}
               </div>
-              <p className="segment__text">{s.text}</p>
+              {s.points.length > 0 ? (
+                <>
+                  <h3 className="segment__title">{s.title}</h3>
+                  <ul className="segment__points">
+                    {s.points.map((p) => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="segment__text">{s.text}</p>
+              )}
+              {s.background && (
+                <p className="segment__extra">
+                  <b>배경</b>
+                  {s.background}
+                </p>
+              )}
+              {s.why && (
+                <p className="segment__extra">
+                  <b>왜 중요한가</b>
+                  {s.why}
+                </p>
+              )}
+              {s.sources.length > 0 && (
+                <p className="segment__sources">
+                  {s.sources.map((src) => (
+                    <a key={src.link} href={src.link} target="_blank" rel="noopener noreferrer">
+                      {src.press || src.title}
+                    </a>
+                  ))}
+                </p>
+              )}
             </article>
           )
         })}

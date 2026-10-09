@@ -1,5 +1,7 @@
 import { useCallback, useRef } from 'react'
 
+// 이제 사용안함 
+
 /**
  * <audio> 요소의 실시간 볼륨을 읽는 훅 (Web Audio API · AnalyserNode)
  *
