@@ -1,22 +1,26 @@
-import boto3
+import os
+import json
+from openai import OpenAI
 
-CANDIDATES = [
-    ("us-east-1", "us.anthropic.claude-haiku-4-5-20251001-v1:0"),
-    ("us-west-2", "us.anthropic.claude-haiku-4-5-20251001-v1:0"),
-    ("us-east-1", "us.amazon.nova-micro-v1:0"),
-    ("us-east-1", "us.amazon.nova-lite-v1:0"),
-]
+client = OpenAI(
+    base_url=os.environ["LLM_BASE_URL"],
+    api_key=os.environ["LLM_API_KEY"],
+)
 
 def lambda_handler(event, context):
-    results = []
-    for region, model in CANDIDATES:
-        try:
-            resp = boto3.client("bedrock-runtime", region_name=region).converse(
-                modelId=model,
-                messages=[{"role": "user", "content": [{"text": "안녕이라고만 답해줘"}]}],
-                inferenceConfig={"maxTokens": 20},
-            )
-            results.append(f"✅ {region} {model}: {resp['output']['message']['content'][0]['text']}")
-        except Exception as e:
-            results.append(f"❌ {region} {model}: {type(e).__name__} {str(e)[:120]}")
-    return results
+    prompt = event.get("prompt", "안녕이라고만 답해")
+    model = event.get("model", "bedrock-haiku")
+
+    r = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "너는 간결하게 답하는 도우미다."},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    answer = r.choices[0].message.content
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps({"answer": answer}, ensure_ascii=False),
+    }

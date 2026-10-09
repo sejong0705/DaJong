@@ -1,299 +1,268 @@
 """
 DawnAir - write_script
-collect_weather + collect_news 결과로 '하루치 방송 대본 JSON'을 만든다.
-
-Bedrock 호출 2번
-  1) 지역별 날씨 멘트 (17개 시·도 한 번에)
-  2) 뉴스 편성 — 톱뉴스 1건 + 카테고리별 기사 선별, 요약·배경·왜 중요한가, 오프닝/클로징
-
-입력 (Step Functions Parallel 결과는 [날씨, 뉴스] 배열로 들어옴. 둘 다 지원)
-  [ {collect_weather 결과}, {collect_news 결과} ]
-  또는 {"weather": {...}, "news": {...}}
-
-환경 변수
-  MOCK_BEDROCK : "true"면 Bedrock 대신 가짜 응답 (권한 열리기 전 테스트용)
-  MODEL_ID     : 기본 us.anthropic.claude-haiku-4-5-20251001-v1:0
-  BEDROCK_REGION : 기본 us-east-1
-
-Lambda 설정
-  런타임 Python 3.12 / 타임아웃 5분 / 메모리 256MB
-  실행 역할: SafeRole-sgu-20260918
+collect_weather + collect_news 결과로 하루치 방송 대본 JSON을 만든다.
+ 
+LLM 호출 2번 (동시에)
+  1) 지역별 날씨 멘트
+  2) 뉴스 편성: 톱뉴스 1건 + 카테고리 뉴스, 오프닝/클로징
+ 
+입력: [collect_weather 결과, collect_news 결과]  (Step Functions Parallel 출력)
+  collect_news가 S3에 저장하고 {"bucket", "s3_key"}만 넘기면 S3에서 읽어온다.
+  기사 재료는 sources[].body(언론사별 본문)를 우선 쓰고, 본문이 없으면 description을 쓴다.
+환경 변수: LLM_BASE_URL, LLM_API_KEY, MODEL_ID(기본 bedrock-haiku)
+계층: openai / 타임아웃 5분 / (S3를 쓰면 실행 역할에 s3:GetObject 권한)
 """
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-
+ 
+from openai import OpenAI
+ 
 KST = timezone(timedelta(hours=9))
-MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
-BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-east-1")
-MOCK = os.environ.get("MOCK_BEDROCK", "false").strip().strip("'\"").lower() in ("true", "1", "yes", "on")
-
-CHARS_PER_SEC = 7  # 브라우저 한국어 TTS 기준 대략적인 읽기 속도 (재생 시간 추정용)
+MODEL_ID = os.environ.get("MODEL_ID", "bedrock-haiku")
+CHARS_PER_SEC = 7       # 한국어 TTS 대략적인 읽기 속도
+FIRST_BODY_CHARS = 1500  # 사건마다 첫 번째 언론사 본문 길이
+OTHER_BODY_CHARS = 500   # 다른 언론사 본문은 보충용으로 짧게 (프롬프트 길이 관리)
 WEEKDAYS = "월화수목금토일"
-
+ 
+client = OpenAI(
+    base_url=os.environ["LLM_BASE_URL"],
+    api_key=os.environ["LLM_API_KEY"],
+    timeout=240,
+    max_retries=2,
+)
+ 
 # ---------------------------------------------------------------- 프롬프트
 SYSTEM_WEATHER = """당신은 아침 라디오 '던에어(DawnAir)'의 날씨 담당 DJ입니다.
-지역별 기상청 예보 데이터를 받아, 그 지역 청취자에게 들려줄 아침 날씨 멘트를 씁니다.
-
+지역별 기상청 예보를 받아 그 지역 청취자에게 들려줄 아침 날씨 멘트를 씁니다.
+ 
 규칙
-- 지역마다 2~3문장, 부드럽고 다정한 라디오 구어체(~요, ~습니다)
-- 아침 기온과 낮 최고기온, 비 소식(있으면 몇 시쯤인지), 일교차를 자연스럽게 녹일 것
-- 출근·등교 옷차림 팁을 한 문장 포함 (예: "얇은 겉옷 하나 챙기세요")
-- 비 확률 60% 이상이거나 비 예보 시간이 있으면 우산 언급
-- 숫자는 소리 내 읽기 쉽게: "12도", "오후 3시쯤". 괄호·기호·영어 약어 쓰지 말 것
-- 데이터에 없는 내용(미세먼지 등)은 지어내지 말 것
-
-반드시 아래 JSON만 출력하세요. 다른 말은 쓰지 마세요.
-{"regions": {"<지역 key>": {"script": "멘트", "summary": "한 줄 요약 15자 이내", "outfit": "옷차림 10자 이내"}}}"""
-
+- 지역마다 2~3문장, 부드러운 라디오 구어체(~요, ~습니다)
+- 아침 기온, 낮 최고기온, 비 소식(있으면 몇 시쯤), 일교차를 자연스럽게
+- 출근·등교 옷차림 팁 한 문장 포함
+- 강수확률 60% 이상이거나 비 오는 시간이 있으면 우산 언급
+- 숫자는 읽기 쉽게("12도", "오후 3시쯤"). 괄호·기호·영어 약어 금지
+- 데이터에 없는 내용은 지어내지 말 것. 모든 지역 key를 빠짐없이 작성
+ 
+JSON 객체 하나만 출력하세요.
+{"regions": {"<지역 key>": {"script": "멘트", "summary": "15자 이내 요약", "outfit": "10자 이내 옷차림"}}}"""
+ 
 SYSTEM_NEWS = """당신은 아침 라디오 '던에어(DawnAir)'의 뉴스 편성 PD이자 DJ입니다.
-지난 하루 수집된 기사 후보를 받아 오늘 아침 방송을 편성하고 원고를 씁니다.
-
+지난 하루 기사 후보를 받아 오늘 아침 방송을 편성하고 원고를 씁니다.
+ 
 편성 규칙
-- 오늘의 톱뉴스 1건 + 카테고리 뉴스 9~13건, 총 10~14건
-- 카테고리별 개수는 그날 중요도에 따라 유동적으로 (어떤 카테고리는 1건, 어떤 곳은 4건). 후보가 빈약한 카테고리는 0건도 가능
-- 같은 사건·같은 주제를 다룬 후보는 하나로 합쳐서 한 번만 다룰 것
-- 톱뉴스는 coverage(보도 언론사 수)를 참고하되, 숫자보다 '사회적 파급력·많은 사람의 삶에 미치는 영향'을 우선해 직접 고를 것
-- 개인 간 범죄·지역 사건은 사회적 의미가 큰 경우에만. 피해자 신상이나 자극적인 묘사는 빼고 담담하게
-- 정치 뉴스는 특정 정당·인물 편을 들지 말고 양쪽 입장을 균형 있게
-- 홍보성 기사(기업 인사·제품 소개 등)는 제외
-
-원고 규칙 (기사마다)
-- headline: 소리 내 읽을 짧은 제목 (20자 이내)
-- summary: 무슨 일이 있었는지 2~3문장
-- background: 이 일이 왜 생겼는지, 이전 맥락 2~3문장
-- why_it_matters: 청취자 삶에 왜 중요한지 1~2문장
-- 모두 라디오 구어체(~습니다, ~요). 소리 내 읽기 쉽게: 괄호·한자·특수기호·영어 약어는 풀어 쓰기 (예: "北" → "북한", "美" → "미국", "%" → "퍼센트")
-- 후보 기사에 있는 사실만 사용. 널리 알려진 일반 상식 외에 숫자·발언·날짜를 지어내지 말 것. 배경을 모르면 짧게 써도 됨
-
-오프닝·클로징
-- opening: 날짜·요일 인사 + 오늘 주요 뉴스 예고, 3~4문장. 날씨 언급은 하지 말 것 (날씨 코너가 따로 있음)
-- closing: 2문장, 따뜻한 마무리
-- title: 오늘 방송 제목 (톱뉴스를 반영, 25자 이내)
-
-반드시 아래 JSON만 출력하세요. 다른 말은 쓰지 마세요.
-{
-  "title": "...",
-  "opening": "...",
-  "top": {"ids": ["후보 id", ...], "headline": "...", "summary": "...", "background": "...", "why_it_matters": "..."},
-  "segments": [
-    {"category": "카테고리 이름", "ids": ["후보 id", ...], "headline": "...", "summary": "...", "background": "...", "why_it_matters": "..."}
-  ],
-  "closing": "..."
-}
-ids에는 그 꼭지에 사용한 후보 기사 id를 모두 넣으세요. segments는 방송 순서대로 정렬하세요."""
-
-
-# ---------------------------------------------------------------- Bedrock
-_client = None
-
-
-def call_bedrock(system, user, max_tokens):
-    global _client
-    import boto3
-    from botocore.config import Config
-    if _client is None:
-        _client = boto3.client(
-            "bedrock-runtime", region_name=BEDROCK_REGION,
-            config=Config(read_timeout=240, retries={"max_attempts": 3, "mode": "adaptive"}),
+- 톱뉴스 1건 + 카테고리 뉴스 9~13건. 카테고리별 개수는 중요도에 따라 유동적(0건도 가능)
+- 같은 사건을 다룬 후보는 하나로 합치고 그 id를 모두 ids에 넣을 것. 톱뉴스 기사는 segments에서 반복 금지
+- 톱뉴스는 coverage(보도 언론사 수)를 참고하되 사회적 파급력을 우선
+- 개인 범죄·지역 사건은 사회적 의미가 클 때만, 담담하게. 정치는 균형 있게. 홍보성 기사 제외
+- category는 후보에 적힌 이름 그대로
+ 
+원고 규칙
+- headline: 20자 이내
+- points: 핵심 요약 3~5문장 (후보 내용이 정말 짧을 때만 2문장).
+  각 문장은 서로 다른 사실 하나씩: 무슨 일인지 → 구체적 수치·규모 → 누가·언제부터 → 반응·향후 일정 순으로.
+  숫자·기관·장소·날짜를 최대한 살릴 것. 이어서 음성으로 읽히므로 자연스럽게 이어지게
+  (음성으로는 points만 읽히니, 청취자가 이것만 듣고도 사건을 이해할 수 있어야 함)
+- background: 왜 생긴 일인지 2~3문장 (화면에만 표시)
+- why_it_matters: 청취자에게 왜 중요한지 1~2문장 (화면에만 표시)
+- 라디오 구어체. 괄호·한자·특수기호·영어 약어는 풀어 쓰기("北"→"북한", "%"→"퍼센트")
+- 후보 기사에 있는 사실만 사용. 숫자·발언·날짜를 지어내지 말 것
+ 
+opening: 날짜·요일 인사 + 주요 뉴스 예고 3~4문장 (날씨 언급 금지)
+closing: 따뜻한 마무리 2문장
+title: 톱뉴스를 반영한 방송 제목 25자 이내
+ 
+JSON 객체 하나만 출력하세요.
+{"title": "...", "opening": "...",
+ "top": {"ids": ["n1"], "headline": "...", "points": ["..."], "background": "...", "why_it_matters": "..."},
+ "segments": [{"category": "...", "ids": ["n2"], "headline": "...", "points": ["..."], "background": "...", "why_it_matters": "..."}],
+ "closing": "..."}"""
+ 
+ 
+# ---------------------------------------------------------------- LLM 호출
+def ask_json(system, user, max_tokens):
+    for attempt in (1, 2):  # 잘리거나 JSON이 깨지면 한 번 더
+        r = client.chat.completions.create(
+            model=MODEL_ID,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": user}],
+            max_tokens=max_tokens,
+            temperature=0.5,
         )
-    resp = _client.converse(
-        modelId=MODEL_ID,
-        system=[{"text": system}],
-        messages=[{"role": "user", "content": [{"text": user}]}],
-        inferenceConfig={"maxTokens": max_tokens, "temperature": 0.5},
-    )
-    text = "".join(c.get("text", "") for c in resp["output"]["message"]["content"])
-    return text, resp.get("usage", {}), resp.get("stopReason")
-
-
-def parse_json(text):
-    """```json 코드블록이나 앞뒤 잡담이 붙어 와도 JSON 부분만 꺼낸다."""
-    text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end < 0:
-        raise ValueError(f"JSON을 찾을 수 없음: {text[:200]}")
-    return json.loads(text[start:end + 1])
-
-
-def ask_json(system, user, max_tokens, mock_fn, usage_log):
-    if MOCK:
-        return mock_fn()
-    last_err = None
-    for _ in range(2):  # JSON이 깨지면 한 번 더
-        text, usage, stop = call_bedrock(system, user, max_tokens)
-        usage_log.append(usage)
-        if stop == "max_tokens":
-            last_err = RuntimeError("응답이 maxTokens에서 잘림")
+        choice = r.choices[0]
+        text = choice.message.content or ""
+        print(f"[{attempt}] finish={choice.finish_reason} usage={r.usage}")
+        if choice.finish_reason == "length":
             continue
         try:
-            return parse_json(text)
-        except Exception as e:
-            last_err = e
-    raise RuntimeError(f"Bedrock 응답 파싱 실패: {last_err}")
-
-
-# ---------------------------------------------------------------- 입력 정리
-def split_input(event):
-    weather = news = None
-    if isinstance(event, list):
-        weather = next((x for x in event if isinstance(x, dict) and "regions" in x), None)
-        news = next((x for x in event if isinstance(x, dict) and "categories" in x), None)
-    elif isinstance(event, dict):
-        weather, news = event.get("weather"), event.get("news")
-    if not weather or not news:
-        raise ValueError(
-            "입력에 날씨/뉴스 데이터가 없습니다. 테스트 이벤트에 "
-            "[collect_weather 결과, collect_news 결과] 배열을 넣거나 test_event.json을 붙여넣으세요.")
-    return weather, news
-
-
+            text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M)
+            return json.loads(text[text.find("{"):text.rfind("}") + 1])
+        except ValueError:
+            print("JSON 파싱 실패:", text[:300])
+    raise RuntimeError("LLM 응답에서 JSON을 얻지 못함")
+ 
+ 
+# ---------------------------------------------------------------- 프롬프트 입력 만들기
+def to_spoken_hour(h):
+    """'19시' → '오후 7시' (모델이 '19시'를 그대로 읽지 않게)"""
+    m = re.match(r"(\d{1,2})", str(h))
+    if not m:
+        return str(h)
+    n = int(m.group(1)) % 24
+    if n == 0:
+        return "밤 12시"
+    if n == 12:
+        return "낮 12시"
+    return f"{'오전' if n < 12 else '오후'} {n % 12}시"
+ 
+ 
 def weather_prompt(weather):
-    lines = []
+    lines = [f"날짜: {weather['date']}"]
     for r in weather["regions"]:
-        p = r.get("periods", {})
-        def fmt(name, label):
-            x = p.get(name)
-            if not x:
-                return f"{label}: 정보 없음"
-            return (f"{label}: {x['temp_min']:.0f}~{x['temp_max']:.0f}도, {x['sky']}, "
-                    f"강수형태 {x['precip']}, 강수확률 최대 {x['pop']}%")
-        lines.append(
-            f"[{r['key']}] {r['name']} | 최저 {r['temp_min']:.0f}도 / 최고 {r['temp_max']:.0f}도 | "
-            f"{fmt('morning', '아침')} | {fmt('afternoon', '오후')} | {fmt('evening', '저녁')} | "
-            f"비 오는 시간: {', '.join(r['rain_hours']) or '없음'} | 최대 풍속 {r.get('wind_max') or 0}m/s"
-        )
-    return f"날짜: {weather['date']}\n\n" + "\n".join(lines)
-
-
-def index_candidates(news):
-    """후보 기사에 id(n1, n2 …)를 붙인다. 모델은 id만 고르고, 링크는 코드가 붙인다(링크 지어내기 방지)."""
-    pool, n = {}, 0
-    top = news.get("top_news")
-    items = ([top] if top else []) + [a for c in news["categories"] for a in c["articles"]]
-    for a in items:
-        n += 1
-        pool[f"n{n}"] = a
-    return pool
-
-
-def news_prompt(pool, date_label):
-    lines = [f"방송 날짜: {date_label}", "", "기사 후보 (id | 카테고리 | 보도 언론사 수 | 제목 | 내용)"]
-    for nid, a in pool.items():
-        body = " / ".join([a["description"]] + a.get("related_descriptions", []))
-        lines.append(f"{nid} | {a['category']} | {a['coverage']} | {a['title']} | {body}")
+        parts = [f"[{r['key']}] {r['name']}", f"최저 {r['temp_min']:.0f}도 / 최고 {r['temp_max']:.0f}도"]
+        for name, label in (("morning", "아침"), ("afternoon", "오후"), ("evening", "저녁")):
+            x = (r.get("periods") or {}).get(name)
+            if x:
+                parts.append(f"{label} {x['temp_min']:.0f}~{x['temp_max']:.0f}도 {x['sky']} "
+                             f"강수 {x['precip']} 확률 {x['pop']}%")
+        hours = [to_spoken_hour(h) for h in r.get("rain_hours") or []]
+        parts.append(f"비 오는 시간: {', '.join(hours) or '없음'}")
+        lines.append(" | ".join(parts))
     return "\n".join(lines)
-
-
-# ---------------------------------------------------------------- 가짜 응답 (MOCK)
-def mock_weather(weather):
-    out = {}
-    for r in weather["regions"]:
-        rain = bool(r["rain_hours"])
-        out[r["key"]] = {
-            "script": f"{r['name']}은 아침 {r['temp_min']:.0f}도, 낮 최고 {r['temp_max']:.0f}도까지 오릅니다. "
-                      + ("비 소식이 있으니 우산 챙기세요." if rain else "얇은 겉옷 하나 챙기시면 좋겠어요."),
-            "summary": "비 소식 있어요" if rain else "대체로 맑아요",
-            "outfit": "우산 필수" if rain else "얇은 겉옷",
-        }
-    return {"regions": out}
-
-
-def mock_news(pool):
-    ids = list(pool)
-    top_id, rest = ids[0], ids[1:12]
-    seg = lambda i: {"category": pool[i]["category"], "ids": [i],
-                     "headline": pool[i]["title"][:20],
-                     "summary": pool[i]["description"][:120],
-                     "background": "[가짜 응답] 배경 설명 자리입니다.",
-                     "why_it_matters": "[가짜 응답] 왜 중요한지 설명 자리입니다."}
-    top = seg(top_id)
-    top.pop("category")
-    return {"title": f"[테스트] {pool[top_id]['title'][:20]}",
-            "opening": "[가짜 응답] 좋은 아침입니다. 던에어 아침 브리핑을 시작합니다.",
-            "top": top, "segments": [seg(i) for i in rest],
-            "closing": "[가짜 응답] 오늘도 좋은 하루 보내세요."}
-
-
+ 
+ 
+def index_candidates(news):
+    """기사마다 id(n1, n2…)를 붙인다. 모델은 id만 고르고 링크는 코드가 붙인다."""
+    items = ([news["top_news"]] if news.get("top_news") else []) + \
+            [a for c in news["categories"] for a in c["articles"]]
+    pool, links = {}, set()
+    for a in items:
+        if a["link"] not in links:
+            links.add(a["link"])
+            pool[f"n{len(pool) + 1}"] = a
+    return pool
+ 
+ 
+def article_text(a):
+    """사건 하나의 재료: 언론사별 본문(첫 기사는 길게, 나머지는 짧게). 본문이 없으면 검색 요약문."""
+    bodies = [s["body"] for s in a.get("sources") or [] if s.get("body")]
+    if bodies:
+        parts = [bodies[0][:FIRST_BODY_CHARS]] + [b[:OTHER_BODY_CHARS] for b in bodies[1:]]
+    else:
+        parts = [a.get("description", "")] + (a.get("related_descriptions") or [])
+    return re.sub(r"\s+", " ", " // ".join(p for p in parts if p))
+ 
+ 
+def news_prompt(pool, date_label):
+    lines = [f"방송 날짜: {date_label}",
+             "기사 후보 (id | 카테고리 | 보도 언론사 수 | 제목 | 내용, 언론사별 본문은 // 로 구분)"]
+    for nid, a in pool.items():
+        lines.append(f"{nid} | {a['category']} | {a.get('coverage', 1)} | {a['title']} | {article_text(a)}")
+    return "\n".join(lines)
+ 
+ 
+def source_links(a):
+    """출처 링크 (본문 제외). collect_news의 언론사별 sources가 있으면 그것을, 없으면 대표 기사."""
+    srcs = a.get("sources") or [a]
+    return [{"press": s.get("press"), "title": s["title"], "link": s["link"],
+             "naver_link": s.get("naver_link"), "published": s.get("published")} for s in srcs]
+ 
+ 
 # ---------------------------------------------------------------- 결과 조립
 def speech(*parts):
-    return " ".join(p.strip() for p in parts if p and p.strip())
-
-
+    text = " ".join(p.strip() if p.strip()[-1] in ".!?" else p.strip() + "."
+                    for p in parts if p and p.strip())
+    # TTS가 기호를 이상하게 읽지 않도록 정리
+    return text.replace("%", "퍼센트").replace("~", "에서 ")
+ 
+ 
 def build_segment(seg_id, kind, category, raw, pool):
     ids = [i for i in raw.get("ids", []) if i in pool]
-    sources, seen = [], set()
-    for i in ids:
-        a = pool[i]
-        if a["link"] not in seen:
-            seen.add(a["link"])
-            sources.append({"title": a["title"], "link": a["link"],
-                            "naver_link": a.get("naver_link"), "published": a["published"]})
-    lead = "오늘의 톱뉴스입니다." if kind == "top" else f"{category} 소식입니다."
-    text = speech(lead, raw["headline"] + ".", raw["summary"], raw["background"], raw["why_it_matters"])
+    if not ids or not raw.get("headline") or not raw.get("points"):
+        return None
+    points = raw["points"] if isinstance(raw["points"], list) else [raw["points"]]
+    # "IT/과학" → "IT, 과학" (TTS가 슬래시를 읽지 않게)
+    lead = "오늘의 톱뉴스입니다." if kind == "top" else f"{category.replace('/', ', ')} 소식입니다."
+    text = speech(lead, raw["headline"], *points)  # 음성은 헤드라인 + 요약까지만
     return {
-        "id": seg_id,
-        "type": kind,
-        "category": category,
-        "headline": raw["headline"],
-        "summary": raw["summary"],
-        "background": raw["background"],
-        "why_it_matters": raw["why_it_matters"],
-        "sources": sources,
+        "id": seg_id, "type": kind, "category": category,
+        "headline": raw["headline"], "points": points,
+        "background": raw.get("background", ""), "why_it_matters": raw.get("why_it_matters", ""),
+        "sources": list({s["link"]: s for i in ids for s in source_links(pool[i])}.values()),
         "speech": text,
         "duration_estimate": round(len(text) / CHARS_PER_SEC),
     }
-
-
-def lambda_handler(event, context):
-    print(f"MOCK_BEDROCK={os.environ.get('MOCK_BEDROCK')!r} → {'가짜 응답 모드' if MOCK else 'Bedrock 호출 모드'}")
-    weather, news = split_input(event)
-    date = datetime.strptime(weather["date"], "%Y-%m-%d")
-    date_label = f"{date.month}월 {date.day}일 {WEEKDAYS[date.weekday()]}요일"
-    usage = []
-
-    # 1) 지역별 날씨
-    w = ask_json(SYSTEM_WEATHER, weather_prompt(weather), 6000,
-                 lambda: mock_weather(weather), usage)
-    weather_out = {}
+ 
+ 
+def build_weather(weather, w):
+    out = {}
     for r in weather["regions"]:
-        m = w["regions"].get(r["key"])
-        if not m:  # 모델이 빠뜨린 지역은 숫자로만 기본 멘트
-            m = mock_weather({"regions": [r]})["regions"][r["key"]]
-        weather_out[r["key"]] = {
+        m = w["regions"].get(r["key"], {})
+        out[r["key"]] = {
             "name": r["name"], "temp_min": r["temp_min"], "temp_max": r["temp_max"],
-            "pop": max((p["pop"] for p in r["periods"].values()), default=0),
-            "rain_hours": r["rain_hours"],
-            "summary": m["summary"], "outfit": m["outfit"],
-            "speech": speech("오늘의 날씨입니다.", m["script"]),
+            "pop": max((p["pop"] for p in (r.get("periods") or {}).values() if p), default=0),
+            "rain_hours": r.get("rain_hours", []),
+            "summary": m.get("summary", ""), "outfit": m.get("outfit", ""),
+            "speech": speech("오늘의 날씨입니다.", m.get("script")
+                             or f"{r['name']}은 아침 {r['temp_min']:.0f}도, 낮 최고 {r['temp_max']:.0f}도입니다."),
         }
-
-    # 2) 뉴스 편성
+    return out
+ 
+ 
+# ---------------------------------------------------------------- 핸들러
+def load(x):
+    """앞 단계가 S3에 저장하고 위치만 넘겼으면 S3에서 읽어온다."""
+    if "s3_key" in x and "regions" not in x and "categories" not in x:
+        import boto3
+        obj = boto3.client("s3").get_object(Bucket=x["bucket"], Key=x["s3_key"])
+        return json.loads(obj["Body"].read())
+    return x
+ 
+ 
+def lambda_handler(event, context):
+    data = [load(x) for x in event]
+    weather = next(x for x in data if "regions" in x)
+    news = next(x for x in data if "categories" in x)
+ 
+    d = datetime.strptime(weather["date"], "%Y-%m-%d")
+    date_label = f"{d.month}월 {d.day}일 {WEEKDAYS[d.weekday()]}요일"
     pool = index_candidates(news)
-    n = ask_json(SYSTEM_NEWS, news_prompt(pool, date_label), 12000,
-                 lambda: mock_news(pool), usage)
-
+    print(f"지역 {len(weather['regions'])}곳, 뉴스 후보 {len(pool)}건")
+ 
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fw = ex.submit(ask_json, SYSTEM_WEATHER, weather_prompt(weather), 6000)
+        fn = ex.submit(ask_json, SYSTEM_NEWS, news_prompt(pool, date_label), 12000)
+        w, n = fw.result(), fn.result()
+ 
     segments = [build_segment("top", "top", "오늘의 톱뉴스", n["top"], pool)]
-    for i, s in enumerate(n["segments"], 1):
-        segments.append(build_segment(f"s{i}", "news", s["category"], s, pool))
-
-    opening = n["opening"]
-    closing = n["closing"]
-    news_seconds = sum(s["duration_estimate"] for s in segments)
+    used = set(n["top"].get("ids", []))
+    for s in n.get("segments", []):
+        if all(i in used for i in s.get("ids", [])):  # 톱뉴스와 겹치는 꼭지 제외
+            continue
+        used.update(s.get("ids", []))
+        segments.append(build_segment(f"s{len(segments)}", "news", s.get("category", "기타"), s, pool))
+    segments = [s for s in segments if s]
+    for i, s in enumerate(x for x in segments if x["type"] == "news"):
+        s["id"] = f"s{i + 1}"
+ 
+    weather_out = build_weather(weather, w)
+    opening, closing = n["opening"], n["closing"]
     avg_weather = round(sum(len(v["speech"]) for v in weather_out.values())
-                        / max(len(weather_out), 1) / CHARS_PER_SEC)
-
+                        / len(weather_out) / CHARS_PER_SEC)
+ 
     return {
         "date": weather["date"],
         "date_label": date_label,
         "title": n["title"],
         "opening": {"speech": opening, "duration_estimate": round(len(opening) / CHARS_PER_SEC)},
-        "weather": weather_out,          # 프론트에서 사용자 지역 key로 골라 재생
-        "segments": segments,            # 톱뉴스 → 카테고리 뉴스 순서
+        "weather": weather_out,   # 프론트에서 사용자 지역 key로 골라 재생
+        "segments": segments,     # 톱뉴스 → 카테고리 뉴스 순서
         "closing": {"speech": closing, "duration_estimate": round(len(closing) / CHARS_PER_SEC)},
-        "duration_estimate": round((len(opening) + len(closing)) / CHARS_PER_SEC) + avg_weather + news_seconds,
+        "duration_estimate": round((len(opening) + len(closing)) / CHARS_PER_SEC)
+                             + avg_weather + sum(s["duration_estimate"] for s in segments),
         "generated_at": datetime.now(KST).isoformat(),
-        "model": "mock" if MOCK else MODEL_ID,
-        "usage": usage,
+        "model": MODEL_ID,
     }
+ 
