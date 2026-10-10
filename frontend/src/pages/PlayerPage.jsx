@@ -144,23 +144,34 @@ export default function PlayerPage() {
           </div>
         </section>
 
-        <section className={`chapters${showChapters ? ' is-open' : ''}`} aria-label="목차">
-          <div className="chapters__header">
-            <h2>목차</h2>
-            <span>{chapters.length}개 챕터</span>
-          </div>
-          <ol>
-            {chapters.map((c, i) => (
-              <li key={c.time}>
-                <button type="button" className={`chapters__item${i === current ? ' is-active' : ''}`} onClick={() => goChapter(c.time)}>
-                  <span className="chapters__time">{formatClock(c.time)}</span>
-                  <span className="chapters__title">{c.title}</span>
-                  {i === current && <span className="chapters__now">재생 중</span>}
-                </button>
-              </li>
-            ))}
-          </ol>
-        </section>
+        {/* 목차 카드 + 위에 대본 링크 (모바일에서는 '목차' 버튼을 눌렀을 때만 보여요) */}
+        <div className={`chapter-column${showChapters ? ' is-open' : ''}`}>
+          <Link to={`/script/${briefing.date}`} className="script-link">
+            <span className="script-link__icon">
+              <Icon name="script" size={18} />
+            </span>
+            <span className="script-link__label">대본 읽으러 가기</span>
+            <Icon name="chevronRight" size={20} />
+          </Link>
+
+          <section className="chapters" aria-label="목차">
+            <div className="chapters__header">
+              <h2>목차</h2>
+              <span>{chapters.length}개 챕터</span>
+            </div>
+            <ol>
+              {chapters.map((c, i) => (
+                <li key={c.time}>
+                  <button type="button" className={`chapters__item${i === current ? ' is-active' : ''}`} onClick={() => goChapter(c.time)}>
+                    <span className="chapters__time">{formatClock(c.time)}</span>
+                    <span className="chapters__title">{c.title}</span>
+                    {i === current && <span className="chapters__now">재생 중</span>}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </div>
       </div>
     </div>
   )
