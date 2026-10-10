@@ -202,10 +202,48 @@
   gap: 8px;
 }
 
-/* ---------- 목차 패널 ---------- */
-.chapters {
+/* ---------- 목차 영역 (대본 링크 + 목차 카드) ---------- */
+.chapter-column {
   width: 440px;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 피그마 ScriptLinkButton */
+.script-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 16px 0 20px;
+  border-radius: 16px;
+  background: var(--bg-surface);
+  box-shadow: 0 8px 32px rgba(138, 106, 85, 0.08);
+  color: var(--player-text-muted);
+  transition: transform 0.15s;
+}
+.script-link:hover {
+  transform: translateY(-1px);
+}
+.script-link__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent-default);
+}
+.script-link__label {
+  flex: 1;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* ---------- 목차 패널 ---------- */
+.chapters {
   padding: 24px 20px;
   border-radius: 24px;
   background: var(--bg-surface);
@@ -279,7 +317,7 @@
     flex-direction: column;
     gap: 24px;
   }
-  .chapters {
+  .chapter-column {
     width: 100%;
     max-width: 520px;
   }
@@ -319,10 +357,10 @@
   }
 
   /* 목차는 버튼을 눌렀을 때만 */
-  .chapters {
+  .chapter-column {
     display: none;
   }
-  .chapters.is-open {
-    display: block;
+  .chapter-column.is-open {
+    display: flex;
   }
 }
