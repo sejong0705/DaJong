@@ -48,12 +48,8 @@ ENDPOINT = "https://naverapihub.apigw.ntruss.com/search/v1/news"
 # 순서가 우선순위: 한 사건이 여러 카테고리에 걸리면 앞쪽 카테고리에 배정
 #   title_terms(선택): 제목에 이 단어 중 하나가 있어야 인정
 #   (환경 키워드는 본문에만 살짝 들어간 기사가 많이 걸려서 제목으로 한 번 더 거름)
+#   max(선택): 이 카테고리에서 고를 사건 수 상한 (없으면 top_n)
 CATEGORIES = [
-    {"key": "climate", "name": "환경/기후",
-     "keywords": ["기후변화", "기후위기", "탄소중립", "폭염", "미세먼지", "재생에너지"],
-     "sids": {"101", "102", "103", "104", "105"},
-     "title_terms": ["기후", "탄소", "온실가스", "폭염", "폭우", "호우", "태풍", "가뭄", "산불",
-                     "미세먼지", "재생에너지", "환경", "플라스틱", "생태", "멸종", "해수면", "빙하"]},
     {"key": "politics", "name": "정치",
      "keywords": ["대통령실", "국회", "여야", "국정감사", "북한", "외교부"],
      "sids": {"100"}},
@@ -69,11 +65,18 @@ CATEGORIES = [
     {"key": "it", "name": "IT/과학",
      "keywords": ["인공지능", "반도체", "과학기술", "우주", "빅테크", "보안"],
      "sids": {"105"}},
+    # 환경/기후는 여러 섹션에 걸쳐 있어서 맨 뒤에 둠 (다른 카테고리 사건을 가져가지 않도록)
+    {"key": "climate", "name": "환경/기후", "max": 3,
+     "keywords": ["기후변화", "기후위기", "탄소중립", "폭염", "미세먼지", "재생에너지"],
+     "sids": {"101", "102", "103", "104", "105"},
+     "title_terms": ["기후", "탄소", "온실가스", "폭염", "폭우", "호우", "태풍", "가뭄", "산불",
+                     "미세먼지", "재생에너지", "환경부", "오염", "플라스틱", "생태", "멸종", "해수면", "빙하"]},
 ]
 
 DISPLAY = 100             # 한 번에 가져올 기사 수 (최대 100)
 TITLE_SIM = 0.45          # 제목 유사도가 이 이상이면 같은 사건
 DESC_SIM = 0.30           # 제목+요약문 유사도가 이 이상이면 같은 사건 (제목 표현이 다를 때 보완)
+TITLE_MIN = 0.25          # 요약문으로 묶을 때도 제목이 최소한 이만큼은 겹쳐야 함
 SOURCES_PER_EVENT = 3     # 사건마다 본문을 가져올 기사 수 (언론사가 다른 것으로)
 MIN_BODY_LEN = 200        # 이보다 짧은 본문(포토·영상 기사)은 버림
 MAX_BODY_LEN = 3000       # 기사 하나당 본문 최대 글자 수 (Bedrock 비용 관리)
@@ -81,6 +84,8 @@ MAX_BODY_LEN = 3000       # 기사 하나당 본문 최대 글자 수 (Bedrock �
 # 방송 재료가 안 되는 기사 (인사·부고·포토·날씨 등). 날씨는 기상청 데이터로 따로 다룸
 JUNK_RE = re.compile(r"^\s*[\[【(<]\s*(인사|부고|부음|동정|포토|사진|화보|게시판|알림|모집|표|그래픽|"
                      r"날씨|내일\s*날씨|오늘\s*날씨|주말\s*날씨|운세|오늘의\s*운세|광고|AD)")
+# 홍보성 기사 (업무협약·제품 출시·기부 등). 제목 어디에 있든 제외
+PROMO_RE = re.compile(r"맞손|업무\s*협약|협약\s*체결|MOU|양해각서|출시|론칭|기념식|후원금|기부")
 TAG_RE = re.compile(r"<[^>]+>")
 NON_WORD_RE = re.compile(r"[^0-9A-Za-z가-힣]")
 
@@ -168,13 +173,20 @@ def jaccard(a, b):
 
 
 def same_event(x, y):
-    """기사 두 개가 같은 사건인지. x, y는 normalize()한 기사."""
-    return (containment(x["t_grams"], y["t_grams"]) >= TITLE_SIM
-            or jaccard(x["d_grams"], y["d_grams"]) >= DESC_SIM)
+    """기사 두 개가 같은 사건인지. x, y는 normalize()한 기사.
+    요약문이 비슷해도 제목이 전혀 다르면 다른 사건으로 본다 (같은 인물·기관이 나오는 다른 뉴스가 섞이는 것 방지)."""
+    t = containment(x["t_grams"], y["t_grams"])
+    return t >= TITLE_SIM or (t >= TITLE_MIN and jaccard(x["d_grams"], y["d_grams"]) >= DESC_SIM)
 
 
 def same_cluster(art, members):
     return any(same_event(art, m) for m in members)
+
+
+def joins_cluster(art, c):
+    """묶음에 들어갈지: 처음 묶음을 만든 기사나 대표 기사와 비슷해야 함.
+    (묶음 안의 아무 기사와 비슷하면 넣는 방식은 A-B-C로 이어지며 주제가 점점 벗어남)"""
+    return same_event(art, c["related"][0]) or same_event(art, c["rep"])
 
 
 def normalize(item, since):
@@ -186,7 +198,7 @@ def normalize(item, since):
     except Exception:
         return None
     title = clean(item.get("title"))
-    if not title or published < since or JUNK_RE.match(title):
+    if not title or published < since or JUNK_RE.match(title) or PROMO_RE.search(title):
         return None
     description = clean(item.get("description"))
     return {
@@ -207,7 +219,7 @@ def cluster(articles):
     for art in sorted(articles, key=lambda a: a["published"], reverse=True):
         domain = press_domain(art["link"])
         for c in clusters:
-            if same_cluster(art, c["related"]):
+            if joins_cluster(art, c):
                 c["count"] += 1
                 c["sources"].add(domain)
                 c["related"].append(art)
@@ -223,8 +235,10 @@ def cluster(articles):
 def pick_sources(c, n=SOURCES_PER_EVENT):
     """같은 사건 기사 중 언론사가 다른 것 n개. 대표 기사를 먼저, 나머지는 설명이 긴 순.
     본문 수집에 실패할 것에 대비해 여유분(n*2)까지 후보로 둔다."""
-    ordered = [c["rep"]] + sorted((a for a in c["related"] if a is not c["rep"]),
-                                  key=lambda a: len(a["description"]), reverse=True)
+    rep = c["rep"]
+    # 대표 기사와 같은 사건으로 확인되는 기사만 출처로 (주제가 다른 기사가 출처로 붙는 것 방지)
+    ordered = [rep] + sorted((a for a in c["related"] if a is not rep and same_event(a, rep)),
+                             key=lambda a: len(a["description"]), reverse=True)
     picked, domains = [], set()
     for a in ordered:
         d = press_domain(a["link"])
@@ -249,7 +263,7 @@ def to_output(c, category):
     # (통신사 기사를 그대로 받아쓴 거의 같은 문장은 제외)
     extra, kept = [], [bigrams(rep["description"])]
     for a in c["related"]:
-        if a is rep or not a["description"]:
+        if a is rep or not a["description"] or not same_event(a, rep):
             continue
         g = bigrams(a["description"])
         if all(jaccard(g, k) < 0.6 for k in kept):
@@ -414,7 +428,7 @@ def lambda_handler(event, context):
             used_reps.extend(c["related"][:5])
             all_clusters.append((c, cat))
             picked.append(to_output(c, cat))
-            if len(picked) >= top_n:
+            if len(picked) >= cat.get("max", top_n):
                 break
 
         categories.append({"key": cat["key"], "name": cat["name"],

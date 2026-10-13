@@ -9,14 +9,17 @@ Bedrock 호출 2번
 입력 (Step Functions에서 받음)
   {"weather": {collect_weather 결과}, "news": {collect_news 결과}}
   ([날씨, 뉴스] 배열로 들어와도 동작)
+  collect_news가 S3에 저장하고 {"bucket", "s3_key"}만 넘기면 S3에서 읽어온다.
 
 환경 변수
-  MODEL_ID       : 기본 us.anthropic.claude-haiku-4-5-20251001-v1:0
-  BEDROCK_REGION : 기본 us-east-1
+  LLM_BASE_URL : OpenAI 호환 게이트웨이 주소
+  LLM_API_KEY  : 게이트웨이 키
+  MODEL_ID     : 기본 bedrock-haiku
 
 Lambda 설정
-  런타임 Python 3.12 / 타임아웃 10분 / 메모리 256MB
-  실행 역할: SafeRole-sgu-20260918
+  런타임 Python / 타임아웃 10분 / 메모리 256MB
+  계층: openai
+  실행 역할: SafeRole-sgu-20260918 (s3:GetObject 필요)
 """
 import json
 import os
@@ -24,13 +27,15 @@ import re
 from datetime import datetime, timedelta, timezone
 
 import boto3
-from botocore.config import Config
+from openai import OpenAI
 
 KST = timezone(timedelta(hours=9))
-MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
-BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-east-1")
+MODEL_ID = os.environ.get("MODEL_ID", "bedrock-haiku")
 
 CHARS_PER_SEC = 7  # 한국어 TTS 기준 대략적인 읽기 속도 (재생 시간 추정용)
+BODY_CHARS = 600   # 프롬프트에 넣을 기사 본문 앞부분 길이 (출처 기사 하나당)
+
+s3 = boto3.client("s3")
 WEEKDAYS = "월화수목금토일"
 
 # ---------------------------------------------------------------- 프롬프트
@@ -52,21 +57,34 @@ SYSTEM_NEWS = """당신은 아침 라디오 '던에어(DawnAir)'의 뉴스 편�
 지난 하루 수집된 기사 후보를 받아 오늘 아침 방송을 편성하고 원고를 씁니다.
 
 편성 규칙
-- 오늘의 톱뉴스 1건 + 카테고리 뉴스 9~13건, 총 10~14건
+- 오늘의 톱뉴스 1건 + 카테고리 뉴스 9~13건, 총 10~14건. segments는 최소 9개를 반드시 채울 것 (후보가 충분하면 적게 고르지 말 것)
 - 카테고리별 개수는 그날 중요도에 따라 유동적으로 (어떤 카테고리는 1건, 어떤 곳은 4건). 후보가 빈약한 카테고리는 0건도 가능
 - 같은 사건·같은 주제를 다룬 후보는 하나로 합쳐서 한 번만 다룰 것
-- 톱뉴스는 coverage(보도 언론사 수)를 참고하되, 숫자보다 '사회적 파급력·많은 사람의 삶에 미치는 영향'을 우선해 직접 고를 것
-- 개인 간 범죄·지역 사건은 사회적 의미가 큰 경우에만. 피해자 신상이나 자극적인 묘사는 빼고 담담하게
+- 카테고리 균형: 정치·경제·사회·국제·IT/과학은 후보가 있으면 최소 1건씩. 환경/기후는 최대 2건
+
+톱뉴스 선정
+- 톱뉴스는 반드시 후보 n1(★표시, 가장 많은 언론사가 보도한 사건)로 할 것. 사건·사고여도 그대로 톱뉴스로 다룰 것
+- n1과 같은 사건을 다룬 다른 후보가 있으면 top의 ids에 함께 넣고, segments에서 다시 다루지 말 것
+- title과 opening도 이 톱뉴스를 중심으로 쓸 것
+
+사건·사고 다루는 법
+- 개인 간 범죄·지역 사건은 사회적 의미가 큰 경우에만
+- 범행 수단·과정, 피해자·피의자 신상 같은 자극적인 묘사는 summary·points·background 어디에도 쓰지 말 것. 무슨 일이 있었는지와 제도적 쟁점 위주로 담담하게
+
+제외할 기사
+- 홍보성 기사: 기업·기관 간 업무협약, 제품 출시, 기업 인사, 지자체의 단순 사업 선정·행사
 - 정치 뉴스는 특정 정당·인물 편을 들지 말고 양쪽 입장을 균형 있게
-- 홍보성 기사(기업 인사·제품 소개 등)는 제외
 
 원고 규칙 (기사마다)
 - headline: 소리 내 읽을 짧은 제목 (20자 이내)
-- summary: 무슨 일이 있었는지 2~3문장
+- summary: 무슨 일이 있었는지 2~3문장 (방송에서 읽는 문장)
+- points: 화면에 보여줄 핵심 요약 3~4개. 각 항목은 한 문장으로, 누가·무엇을·얼마나 같은 구체적 사실(숫자, 기관명, 날짜)을 담을 것. 문어체 단문(~했다, ~예정)으로 짧게
 - background: 이 일이 왜 생겼는지, 이전 맥락 2~3문장
 - why_it_matters: 청취자 삶에 왜 중요한지 1~2문장
 - 모두 라디오 구어체(~습니다, ~요). 소리 내 읽기 쉽게: 괄호·한자·특수기호·영어 약어는 풀어 쓰기 (예: "北" → "북한", "美" → "미국", "%" → "퍼센트")
 - 후보 기사에 있는 사실만 사용. 널리 알려진 일반 상식 외에 숫자·발언·날짜를 지어내지 말 것. 배경을 모르면 짧게 써도 됨
+- 한 꼭지에는 그 꼭지에 고른 후보(ids)의 내용만 쓸 것. 다른 후보 기사의 내용을 섞지 말 것
+- 본문 안에 그 사건과 관계없는 문단(같은 인물의 다른 일정, 기사 끝 관련 소식 등)이 섞여 있으면 무시할 것. background는 반드시 이 사건이 왜 일어났는지에 대한 내용이어야 함
 
 오프닝·클로징
 - opening: 날짜·요일 인사 + 오늘 주요 뉴스 예고, 3~4문장. 날씨 언급은 하지 말 것 (날씨 코너가 따로 있음)
@@ -77,9 +95,9 @@ SYSTEM_NEWS = """당신은 아침 라디오 '던에어(DawnAir)'의 뉴스 편�
 {
   "title": "...",
   "opening": "...",
-  "top": {"ids": ["후보 id", ...], "headline": "...", "summary": "...", "background": "...", "why_it_matters": "..."},
+  "top": {"ids": ["후보 id", ...], "headline": "...", "summary": "...", "points": ["...", "..."], "background": "...", "why_it_matters": "..."},
   "segments": [
-    {"category": "카테고리 이름", "ids": ["후보 id", ...], "headline": "...", "summary": "...", "background": "...", "why_it_matters": "..."}
+    {"category": "카테고리 이름", "ids": ["후보 id", ...], "headline": "...", "summary": "...", "points": ["...", "..."], "background": "...", "why_it_matters": "..."}
   ],
   "closing": "..."
 }
@@ -87,21 +105,29 @@ ids에는 그 꼭지에 사용한 후보 기사 id를 모두 넣으세요. segme
 
 
 # ---------------------------------------------------------------- Bedrock
-bedrock = boto3.client(
-    "bedrock-runtime", region_name=BEDROCK_REGION,
-    config=Config(read_timeout=240, retries={"max_attempts": 3, "mode": "adaptive"}),
+llm = OpenAI(
+    base_url=os.environ["LLM_BASE_URL"],
+    api_key=os.environ["LLM_API_KEY"],
+    timeout=240,
+    max_retries=2,
 )
 
 
 def call_bedrock(system, user, max_tokens):
-    resp = bedrock.converse(
-        modelId=MODEL_ID,
-        system=[{"text": system}],
-        messages=[{"role": "user", "content": [{"text": user}]}],
-        inferenceConfig={"maxTokens": max_tokens, "temperature": 0.5},
+    resp = llm.chat.completions.create(
+        model=MODEL_ID,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        max_tokens=max_tokens,
+        temperature=0.5,
     )
-    text = "".join(c.get("text", "") for c in resp["output"]["message"]["content"])
-    return text, resp.get("usage", {}), resp.get("stopReason")
+    choice = resp.choices[0]
+    text = choice.message.content or ""
+    usage = resp.usage.model_dump() if resp.usage else {}
+    stop = "max_tokens" if choice.finish_reason == "length" else choice.finish_reason
+    return text, usage, stop
 
 
 def parse_json(text):
@@ -138,7 +164,15 @@ def split_input(event):
         weather, news = event.get("weather"), event.get("news")
     if not weather or not news:
         raise ValueError("입력에 날씨/뉴스 데이터가 없습니다.")
-    return weather, news
+    return weather, load_from_s3(news)
+
+
+def load_from_s3(data):
+    """collect_news가 S3 위치만 넘긴 경우 실제 데이터를 읽어온다."""
+    if "categories" in data or "s3_key" not in data:
+        return data
+    obj = s3.get_object(Bucket=data["bucket"], Key=data["s3_key"])
+    return json.loads(obj["Body"].read().decode("utf-8"))
 
 
 def weather_prompt(weather):
@@ -172,6 +206,24 @@ def fallback_weather(r):
     }
 
 
+TOP_ID = "n1"  # collect_news가 고른 보도량 1위 사건 (index_candidates에서 맨 앞에 둠)
+
+
+def fix_top(n, pool):
+    """모델이 톱뉴스로 n1을 고르지 않았으면, n1을 다룬 꼭지와 자리를 바꿔 보도량 1위를 톱으로 맞춘다."""
+    top, segs = n["top"], n["segments"]
+    if TOP_ID not in pool or TOP_ID in top.get("ids", []):
+        return
+    idx = next((i for i, s in enumerate(segs) if TOP_ID in s.get("ids", [])), None)
+    if idx is None:
+        return
+    new_top = segs.pop(idx)
+    first = next((i for i in top.get("ids", []) if i in pool), None)
+    top["category"] = pool[first]["category"] if first else new_top["category"]
+    segs.insert(0, top)
+    n["top"] = new_top
+
+
 def index_candidates(news):
     """후보 기사에 id(n1, n2 …)를 붙인다. 모델은 id만 고르고, 링크는 코드가 붙인다(링크 지어내기 방지)."""
     pool, n = {}, 0
@@ -184,10 +236,16 @@ def index_candidates(news):
 
 
 def news_prompt(pool, date_label):
-    lines = [f"방송 날짜: {date_label}", "", "기사 후보 (id | 카테고리 | 보도 언론사 수 | 제목 | 내용)"]
+    lines = [f"방송 날짜: {date_label}", "",
+             "기사 후보 (id | 카테고리 | 보도 언론사 수 | 제목 | 요약), 그 아래 언론사별 본문 앞부분"]
     for nid, a in pool.items():
-        body = " / ".join([a["description"]] + a.get("related_descriptions", []))
-        lines.append(f"{nid} | {a['category']} | {a['coverage']} | {a['title']} | {body}")
+        desc = " / ".join([a["description"]] + a.get("related_descriptions", []))
+        mark = "★" if nid == TOP_ID else ""
+        lines.append(f"\n{mark}{nid} | {a['category']} | {a['coverage']} | {a['title']} | {desc}")
+        for s in a.get("sources", []):
+            body = (s.get("body") or "").replace("\n", " ")[:BODY_CHARS]
+            if body:
+                lines.append(f"  - [{s.get('press', '')}] {body}")
     return "\n".join(lines)
 
 
@@ -201,10 +259,14 @@ def build_segment(seg_id, kind, category, raw, pool):
     sources, seen = [], set()
     for i in ids:
         a = pool[i]
-        if a["link"] not in seen:
-            seen.add(a["link"])
-            sources.append({"title": a["title"], "link": a["link"],
-                            "naver_link": a.get("naver_link"), "published": a["published"]})
+        # 언론사별 출처 기사들 (본문 수집에 실패했으면 대표 기사 하나)
+        refs = a.get("sources") or [{"press": "", "title": a["title"], "link": a["link"],
+                                     "naver_link": a.get("naver_link"), "published": a["published"]}]
+        for s in refs:
+            if s["link"] not in seen:
+                seen.add(s["link"])
+                sources.append({"press": s.get("press", ""), "title": s["title"], "link": s["link"],
+                                "naver_link": s.get("naver_link"), "published": s["published"]})
     lead = "오늘의 톱뉴스입니다." if kind == "top" else f"{category} 소식입니다."
     text = speech(lead, raw["headline"] + ".", raw["summary"], raw["background"], raw["why_it_matters"])
     return {
@@ -213,6 +275,7 @@ def build_segment(seg_id, kind, category, raw, pool):
         "category": category,
         "headline": raw["headline"],
         "summary": raw["summary"],
+        "points": [p for p in raw.get("points", []) if isinstance(p, str) and p.strip()],
         "background": raw["background"],
         "why_it_matters": raw["why_it_matters"],
         "sources": sources,
@@ -243,6 +306,7 @@ def lambda_handler(event, context):
     # 2) 뉴스 편성
     pool = index_candidates(news)
     n = ask_json(SYSTEM_NEWS, news_prompt(pool, date_label), 12000, usage)
+    fix_top(n, pool)
 
     segments = [build_segment("top", "top", "오늘의 톱뉴스", n["top"], pool)]
     for i, s in enumerate(n["segments"], 1):
