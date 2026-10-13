@@ -15,7 +15,10 @@ export default function ScriptPage() {
     const [briefing, script] = await Promise.all([getBriefing(date), getScript(date)])
     return { briefing, script }
   }, [date])
-  const [filter, setFilter] = useState('전체')
+  // 필터는 날짜별로 기억해서, 다른 날짜로 넘어가면 '전체'로 돌아가요
+  const [picked, setPicked] = useState({ date, value: '전체' })
+  const filter = picked.date === date ? picked.value : '전체'
+  const setFilter = (value) => setPicked({ date, value })
   const player = usePlayer()
 
   const segments = useMemo(() => data?.script?.segments ?? [], [data])
@@ -99,7 +102,39 @@ export default function ScriptPage() {
                 <CategoryChip label={s.category} />
                 {active && <span className="segment__now">▶ 재생 중</span>}
               </div>
-              <p className="segment__text">{s.text}</p>
+              {s.points.length > 0 ? (
+                <>
+                  <h3 className="segment__title">{s.title}</h3>
+                  <ul className="segment__points">
+                    {s.points.map((p) => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="segment__text">{s.text}</p>
+              )}
+              {s.background && (
+                <p className="segment__extra">
+                  <b>배경</b>
+                  {s.background}
+                </p>
+              )}
+              {s.why && (
+                <p className="segment__extra">
+                  <b>왜 중요한가</b>
+                  {s.why}
+                </p>
+              )}
+              {s.sources.length > 0 && (
+                <p className="segment__sources">
+                  {s.sources.map((src) => (
+                    <a key={src.link} href={src.link} target="_blank" rel="noopener noreferrer">
+                      {src.press || src.title}
+                    </a>
+                  ))}
+                </p>
+              )}
             </article>
           )
         })}

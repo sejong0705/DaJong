@@ -9,9 +9,21 @@ import { usePlayer } from '../context/PlayerContext'
 import { addDays, currentHourKST, formatDuration, todayKey } from '../utils/date'
 import './pages.css'
 
+// 마지막으로 불러온 오늘 방송. 홈에 다시 돌아올 때 Splash 가 또 뜨지 않게 먼저 보여줘요
+const cache = { date: null, briefing: null }
+
 export default function TodayPage() {
   const today = todayKey()
-  const { data: briefing, loading, error } = useAsync(() => getBriefing(today), [today])
+  const fetched = useAsync(async () => {
+    const b = await getBriefing(today)
+    cache.date = today
+    cache.briefing = b
+    return b
+  }, [today])
+  const cached = fetched.loading && cache.date === today
+  const briefing = cached ? cache.briefing : fetched.data
+  const loading = fetched.loading && !cached
+  const { error } = fetched
   const recent = useAsync(async () => {
     // 월초에도 지난 방송이 보이도록 이번 달 + 지난달을 합쳐요
     const prevMonth = addDays(`${today.slice(0, 7)}-01`, -1).slice(0, 7)
@@ -34,10 +46,12 @@ export default function TodayPage() {
     player.play()
   }
   const w = briefing.weather
+  // 지금 재생 중인 헤드라인 = 시작 시간이 현재 시간보다 작거나 같은 마지막 헤드라인
+  const activeTime = isCurrent ? briefing.headlines.findLast((h) => h.time <= player.currentTime)?.time : undefined
 
   return (
     <div className="container page today">
-      <div className="today__top">
+      <div className={`today__top${w ? '' : ' today__top--single'}`}>
         <section className="hero" aria-labelledby="hero-title">
           <span className="hero__badge">
             <i /> ON AIR · 06:00 업데이트
@@ -95,7 +109,7 @@ export default function TodayPage() {
           </div>
           <ul className="card headline-list">
             {briefing.headlines.map((h) => (
-              <HeadlineItem key={h.time} {...h} onSelect={onHeadline} />
+              <HeadlineItem key={h.time} {...h} active={h.time === activeTime} onSelect={onHeadline} />
             ))}
           </ul>
         </section>

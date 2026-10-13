@@ -6,7 +6,7 @@ import Logo from '../components/Logo'
 import BroadcastOrb from '../components/BroadcastOrb'
 import { getBriefing } from '../api/briefing'
 import { usePlayer } from '../context/PlayerContext'
-import { currentHourKST, dateParts, formatClock, formatDuration, formatLongDate, todayKey } from '../utils/date'
+import { currentHourKST, dateParts, formatClock, formatDuration, formatLongDate, formatRate, todayKey } from '../utils/date'
 import './PlayerPage.css'
 
 function greeting() {
@@ -75,12 +75,14 @@ export default function PlayerPage() {
     <div className="player-page">
       <span className="player-page__handle only-mobile-block" aria-hidden="true" />
       <header className="player-page__header container">
-        <Logo />
+        <Link to="/" aria-label="DawnAir 홈">
+          <Logo />
+        </Link>
         <div className="player-page__header-actions">
           <Link to="/history" aria-label="지난 방송">
             <Icon name="history" size={24} />
           </Link>
-          <button type="button" className="player-page__close" onClick={close}>
+          <button type="button" className="player-page__close" onClick={close} aria-label="접기">
             <Icon name="chevronDown" size={18} />
             <span>접기</span>
           </button>
@@ -89,7 +91,7 @@ export default function PlayerPage() {
 
       <div className="player-page__body container">
         <section className="now-playing" aria-label="지금 재생 중">
-          <BroadcastOrb size={typeof window !== 'undefined' && window.innerWidth < 768 ? 200 : 240} />
+          <BroadcastOrb />
 
           <h1 className="now-playing__greeting">{greeting()}</h1>
           <p className="now-playing__muted">
@@ -134,7 +136,7 @@ export default function PlayerPage() {
 
           <div className="now-playing__bottom">
             <button type="button" onClick={player.cycleRate}>
-              {Number.isInteger(rate) ? rate.toFixed(1) : rate}×
+              {formatRate(rate)}
             </button>
             <button type="button" className="only-mobile-flex" onClick={() => setShowChapters((v) => !v)} aria-expanded={showChapters}>
               <Icon name="chapters" size={20} /> 목차 {chapters.length}
@@ -142,23 +144,34 @@ export default function PlayerPage() {
           </div>
         </section>
 
-        <section className={`chapters${showChapters ? ' is-open' : ''}`} aria-label="목차">
-          <div className="chapters__header">
-            <h2>목차</h2>
-            <span>{chapters.length}개 챕터</span>
-          </div>
-          <ol>
-            {chapters.map((c, i) => (
-              <li key={c.time}>
-                <button type="button" className={`chapters__item${i === current ? ' is-active' : ''}`} onClick={() => goChapter(c.time)}>
-                  <span className="chapters__time">{formatClock(c.time)}</span>
-                  <span className="chapters__title">{c.title}</span>
-                  {i === current && <span className="chapters__now">재생 중</span>}
-                </button>
-              </li>
-            ))}
-          </ol>
-        </section>
+        {/* 목차 카드 + 위에 대본 링크 (모바일에서는 '목차' 버튼을 눌렀을 때만 보여요) */}
+        <div className={`chapter-column${showChapters ? ' is-open' : ''}`}>
+          <Link to={`/script/${briefing.date}`} className="script-link">
+            <span className="script-link__icon">
+              <Icon name="script" size={18} />
+            </span>
+            <span className="script-link__label">대본 읽으러 가기</span>
+            <Icon name="chevronRight" size={20} />
+          </Link>
+
+          <section className="chapters" aria-label="목차">
+            <div className="chapters__header">
+              <h2>목차</h2>
+              <span>{chapters.length}개 챕터</span>
+            </div>
+            <ol>
+              {chapters.map((c, i) => (
+                <li key={c.time}>
+                  <button type="button" className={`chapters__item${i === current ? ' is-active' : ''}`} onClick={() => goChapter(c.time)}>
+                    <span className="chapters__time">{formatClock(c.time)}</span>
+                    <span className="chapters__title">{c.title}</span>
+                    {i === current && <span className="chapters__now">재생 중</span>}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </div>
       </div>
     </div>
   )
@@ -167,14 +180,30 @@ export default function PlayerPage() {
 /** 챕터별로 나뉜 진행바 */
 function ChapterProgress({ chapters, total, currentTime, onSeek }) {
   if (!total) return <div className="chapter-progress" />
-  const parts = chapters.map((c, i) => {
-    const end = chapters[i + 1]?.time ?? total
+  // 음원이 목차보다 짧을 수 있어서, 음원 길이 안에 있는 챕터만 그리고 끝은 음원 길이에서 잘라요
+  const inRange = chapters.filter((c, i) => i === 0 || c.time < total)
+  const parts = inRange.map((c, i) => {
+    const end = Math.min(inRange[i + 1]?.time ?? total, total)
     const len = Math.max(0, end - c.time)
     const played = Math.min(len, Math.max(0, currentTime - c.time))
     return { start: c.time, len, ratio: len ? played / len : 0 }
   })
 
+  // 구간 사이에 4px 틈(CSS gap)이 있어서, 손잡이 위치도 틈을 빼고 계산해야 채워진 막대 끝과 맞아요
+  const GAP = 4
+  const idx = Math.max(0, parts.findLastIndex((p) => p.start <= currentTime))
+  const knobRatio = Math.min(1, Math.max(0, currentTime / total))
+  const knobLeft = `calc(${knobRatio} * (100% - ${GAP * (parts.length - 1)}px) + ${GAP * idx}px)`
+
+  // 누른 구간 안에서의 위치로 시간 계산 (틈을 누르면 전체 비율로)
   const onClick = (e) => {
+    const seg = e.target.closest('.chapter-progress__seg')
+    if (seg) {
+      const p = parts[Number(seg.dataset.index)]
+      const rect = seg.getBoundingClientRect()
+      onSeek(p.start + ((e.clientX - rect.left) / rect.width) * p.len)
+      return
+    }
     const rect = e.currentTarget.getBoundingClientRect()
     onSeek(((e.clientX - rect.left) / rect.width) * total)
   }
@@ -195,12 +224,12 @@ function ChapterProgress({ chapters, total, currentTime, onSeek }) {
         if (e.key === 'ArrowLeft') onSeek(currentTime - 5)
       }}
     >
-      {parts.map((p) => (
-        <span key={p.start} className="chapter-progress__seg" style={{ flexGrow: p.len }}>
+      {parts.map((p, i) => (
+        <span key={p.start} className="chapter-progress__seg" data-index={i} style={{ flexGrow: p.len }}>
           <span style={{ width: `${p.ratio * 100}%` }} />
         </span>
       ))}
-      <span className="chapter-progress__knob" style={{ left: `${(currentTime / total) * 100}%` }} />
+      <span className="chapter-progress__knob" style={{ left: knobLeft }} />
     </div>
   )
 }

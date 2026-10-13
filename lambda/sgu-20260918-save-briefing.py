@@ -37,12 +37,16 @@ def lambda_handler(event, context):
         ContentType="application/json; charset=utf-8",
     )
 
+    # 음성 파일이 있으면 실제 길이, 없으면 글자 수 기반 추정치
+    audio = script.get("audio") or {}
+    duration = next(iter(audio.values()))["duration"] if audio else script["duration_estimate"]
+
     # 2) DynamoDB: 웹앱 첫 화면·히스토리 목록에 필요한 것만
     item = {
         "date": script["date"],
         "date_label": script["date_label"],
         "title": script["title"],
-        "duration": script["duration_estimate"],          # 초 단위 (추정치)
+        "duration": duration,                              # 초 단위
         "scriptKey": key,                                  # 전문은 S3에서
         "headlines": [
             {"id": s["id"], "category": s["category"], "headline": s["headline"]}
@@ -54,6 +58,8 @@ def lambda_handler(event, context):
             for k, v in script["weather"].items()
         },
         "segmentCount": len(script["segments"]),
+        # Polly 음성 (tts_briefing 단계가 있을 때만): 지역 key → mp3 위치
+        "audio": {k: v["key"] for k, v in audio.items()},
         "model": script.get("model"),
         "generatedAt": script["generated_at"],
         "savedAt": datetime.now(KST).isoformat(),
