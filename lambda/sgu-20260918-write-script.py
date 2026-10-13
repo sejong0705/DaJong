@@ -3,20 +3,19 @@ DawnAir - write_script
 collect_weather + collect_news 결과로 '하루치 방송 대본 JSON'을 만든다.
 
 Bedrock 호출 2번
-  1) 지역별 날씨 멘트 (17개 시·도 한 번에)
+  1) 지역별 날씨 멘트
   2) 뉴스 편성 — 톱뉴스 1건 + 카테고리별 기사 선별, 요약·배경·왜 중요한가, 오프닝/클로징
 
-입력 (Step Functions Parallel 결과는 [날씨, 뉴스] 배열로 들어옴. 둘 다 지원)
-  [ {collect_weather 결과}, {collect_news 결과} ]
-  또는 {"weather": {...}, "news": {...}}
+입력 (Step Functions에서 받음)
+  {"weather": {collect_weather 결과}, "news": {collect_news 결과}}
+  ([날씨, 뉴스] 배열로 들어와도 동작)
 
 환경 변수
-  MOCK_BEDROCK : "true"면 Bedrock 대신 가짜 응답 (권한 열리기 전 테스트용)
-  MODEL_ID     : 기본 us.anthropic.claude-haiku-4-5-20251001-v1:0
+  MODEL_ID       : 기본 us.anthropic.claude-haiku-4-5-20251001-v1:0
   BEDROCK_REGION : 기본 us-east-1
 
 Lambda 설정
-  런타임 Python 3.12 / 타임아웃 5분 / 메모리 256MB
+  런타임 Python 3.12 / 타임아웃 10분 / 메모리 256MB
   실행 역할: SafeRole-sgu-20260918
 """
 import json
@@ -24,12 +23,14 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 
+import boto3
+from botocore.config import Config
+
 KST = timezone(timedelta(hours=9))
 MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-east-1")
-MOCK = os.environ.get("MOCK_BEDROCK", "false").strip().strip("'\"").lower() in ("true", "1", "yes", "on")
 
-CHARS_PER_SEC = 7  # 브라우저 한국어 TTS 기준 대략적인 읽기 속도 (재생 시간 추정용)
+CHARS_PER_SEC = 7  # 한국어 TTS 기준 대략적인 읽기 속도 (재생 시간 추정용)
 WEEKDAYS = "월화수목금토일"
 
 # ---------------------------------------------------------------- 프롬프트
@@ -86,19 +87,14 @@ ids에는 그 꼭지에 사용한 후보 기사 id를 모두 넣으세요. segme
 
 
 # ---------------------------------------------------------------- Bedrock
-_client = None
+bedrock = boto3.client(
+    "bedrock-runtime", region_name=BEDROCK_REGION,
+    config=Config(read_timeout=240, retries={"max_attempts": 3, "mode": "adaptive"}),
+)
 
 
 def call_bedrock(system, user, max_tokens):
-    global _client
-    import boto3
-    from botocore.config import Config
-    if _client is None:
-        _client = boto3.client(
-            "bedrock-runtime", region_name=BEDROCK_REGION,
-            config=Config(read_timeout=240, retries={"max_attempts": 3, "mode": "adaptive"}),
-        )
-    resp = _client.converse(
+    resp = bedrock.converse(
         modelId=MODEL_ID,
         system=[{"text": system}],
         messages=[{"role": "user", "content": [{"text": user}]}],
@@ -117,9 +113,7 @@ def parse_json(text):
     return json.loads(text[start:end + 1])
 
 
-def ask_json(system, user, max_tokens, mock_fn, usage_log):
-    if MOCK:
-        return mock_fn()
+def ask_json(system, user, max_tokens, usage_log):
     last_err = None
     for _ in range(2):  # JSON이 깨지면 한 번 더
         text, usage, stop = call_bedrock(system, user, max_tokens)
@@ -143,9 +137,7 @@ def split_input(event):
     elif isinstance(event, dict):
         weather, news = event.get("weather"), event.get("news")
     if not weather or not news:
-        raise ValueError(
-            "입력에 날씨/뉴스 데이터가 없습니다. 테스트 이벤트에 "
-            "[collect_weather 결과, collect_news 결과] 배열을 넣거나 test_event.json을 붙여넣으세요.")
+        raise ValueError("입력에 날씨/뉴스 데이터가 없습니다.")
     return weather, news
 
 
@@ -153,18 +145,31 @@ def weather_prompt(weather):
     lines = []
     for r in weather["regions"]:
         p = r.get("periods", {})
+
         def fmt(name, label):
             x = p.get(name)
             if not x:
                 return f"{label}: 정보 없음"
             return (f"{label}: {x['temp_min']:.0f}~{x['temp_max']:.0f}도, {x['sky']}, "
                     f"강수형태 {x['precip']}, 강수확률 최대 {x['pop']}%")
+
         lines.append(
             f"[{r['key']}] {r['name']} | 최저 {r['temp_min']:.0f}도 / 최고 {r['temp_max']:.0f}도 | "
             f"{fmt('morning', '아침')} | {fmt('afternoon', '오후')} | {fmt('evening', '저녁')} | "
             f"비 오는 시간: {', '.join(r['rain_hours']) or '없음'} | 최대 풍속 {r.get('wind_max') or 0}m/s"
         )
     return f"날짜: {weather['date']}\n\n" + "\n".join(lines)
+
+
+def fallback_weather(r):
+    """모델이 빠뜨린 지역은 숫자로만 기본 멘트를 만든다."""
+    rain = bool(r["rain_hours"])
+    return {
+        "script": f"{r['name']}은 아침 {r['temp_min']:.0f}도, 낮 최고 {r['temp_max']:.0f}도까지 오릅니다. "
+                  + ("비 소식이 있으니 우산 챙기세요." if rain else "얇은 겉옷 하나 챙기시면 좋겠어요."),
+        "summary": "비 소식 있어요" if rain else "대체로 맑아요",
+        "outfit": "우산 필수" if rain else "얇은 겉옷",
+    }
 
 
 def index_candidates(news):
@@ -184,36 +189,6 @@ def news_prompt(pool, date_label):
         body = " / ".join([a["description"]] + a.get("related_descriptions", []))
         lines.append(f"{nid} | {a['category']} | {a['coverage']} | {a['title']} | {body}")
     return "\n".join(lines)
-
-
-# ---------------------------------------------------------------- 가짜 응답 (MOCK)
-def mock_weather(weather):
-    out = {}
-    for r in weather["regions"]:
-        rain = bool(r["rain_hours"])
-        out[r["key"]] = {
-            "script": f"{r['name']}은 아침 {r['temp_min']:.0f}도, 낮 최고 {r['temp_max']:.0f}도까지 오릅니다. "
-                      + ("비 소식이 있으니 우산 챙기세요." if rain else "얇은 겉옷 하나 챙기시면 좋겠어요."),
-            "summary": "비 소식 있어요" if rain else "대체로 맑아요",
-            "outfit": "우산 필수" if rain else "얇은 겉옷",
-        }
-    return {"regions": out}
-
-
-def mock_news(pool):
-    ids = list(pool)
-    top_id, rest = ids[0], ids[1:12]
-    seg = lambda i: {"category": pool[i]["category"], "ids": [i],
-                     "headline": pool[i]["title"][:20],
-                     "summary": pool[i]["description"][:120],
-                     "background": "[가짜 응답] 배경 설명 자리입니다.",
-                     "why_it_matters": "[가짜 응답] 왜 중요한지 설명 자리입니다."}
-    top = seg(top_id)
-    top.pop("category")
-    return {"title": f"[테스트] {pool[top_id]['title'][:20]}",
-            "opening": "[가짜 응답] 좋은 아침입니다. 던에어 아침 브리핑을 시작합니다.",
-            "top": top, "segments": [seg(i) for i in rest],
-            "closing": "[가짜 응답] 오늘도 좋은 하루 보내세요."}
 
 
 # ---------------------------------------------------------------- 결과 조립
@@ -247,20 +222,16 @@ def build_segment(seg_id, kind, category, raw, pool):
 
 
 def lambda_handler(event, context):
-    print(f"MOCK_BEDROCK={os.environ.get('MOCK_BEDROCK')!r} → {'가짜 응답 모드' if MOCK else 'Bedrock 호출 모드'}")
     weather, news = split_input(event)
     date = datetime.strptime(weather["date"], "%Y-%m-%d")
     date_label = f"{date.month}월 {date.day}일 {WEEKDAYS[date.weekday()]}요일"
     usage = []
 
     # 1) 지역별 날씨
-    w = ask_json(SYSTEM_WEATHER, weather_prompt(weather), 6000,
-                 lambda: mock_weather(weather), usage)
+    w = ask_json(SYSTEM_WEATHER, weather_prompt(weather), 6000, usage)
     weather_out = {}
     for r in weather["regions"]:
-        m = w["regions"].get(r["key"])
-        if not m:  # 모델이 빠뜨린 지역은 숫자로만 기본 멘트
-            m = mock_weather({"regions": [r]})["regions"][r["key"]]
+        m = w.get("regions", {}).get(r["key"]) or fallback_weather(r)
         weather_out[r["key"]] = {
             "name": r["name"], "temp_min": r["temp_min"], "temp_max": r["temp_max"],
             "pop": max((p["pop"] for p in r["periods"].values()), default=0),
@@ -271,8 +242,7 @@ def lambda_handler(event, context):
 
     # 2) 뉴스 편성
     pool = index_candidates(news)
-    n = ask_json(SYSTEM_NEWS, news_prompt(pool, date_label), 12000,
-                 lambda: mock_news(pool), usage)
+    n = ask_json(SYSTEM_NEWS, news_prompt(pool, date_label), 12000, usage)
 
     segments = [build_segment("top", "top", "오늘의 톱뉴스", n["top"], pool)]
     for i, s in enumerate(n["segments"], 1):
@@ -289,11 +259,11 @@ def lambda_handler(event, context):
         "date_label": date_label,
         "title": n["title"],
         "opening": {"speech": opening, "duration_estimate": round(len(opening) / CHARS_PER_SEC)},
-        "weather": weather_out,          # 프론트에서 사용자 지역 key로 골라 재생
+        "weather": weather_out,          # 프론트에서 지역 key로 골라 재생
         "segments": segments,            # 톱뉴스 → 카테고리 뉴스 순서
         "closing": {"speech": closing, "duration_estimate": round(len(closing) / CHARS_PER_SEC)},
         "duration_estimate": round((len(opening) + len(closing)) / CHARS_PER_SEC) + avg_weather + news_seconds,
         "generated_at": datetime.now(KST).isoformat(),
-        "model": "mock" if MOCK else MODEL_ID,
+        "model": MODEL_ID,
         "usage": usage,
     }
