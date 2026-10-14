@@ -17,9 +17,15 @@ const RATES = [1, 1.25, 1.5, 0.8]
 const synth = typeof window !== 'undefined' ? window.speechSynthesis : null
 
 /** 한국어 목소리 고르기 (자연스러운 목소리 우선) */
+/** 한국어 목소리 고르기: 온라인(자연스러운) 목소리 → 설치된 목소리 순 */
 function pickVoice() {
   const ko = (synth?.getVoices() ?? []).filter((v) => v.lang?.toLowerCase().startsWith('ko'))
-  return ko.find((v) => /Google|SunHi|Heami|Yuna|InJoon/i.test(v.name)) ?? ko[0] ?? null
+  return (
+    ko.find((v) => /Online|Natural/i.test(v.name)) ?? // 엣지: 선히, 인준 등
+    ko.find((v) => /Google/i.test(v.name)) ?? // 크롬: Google 한국의
+    ko[0] ?? // 그 외: 설치된 목소리 (Heami 등)
+    null
+  )
 }
 
 /** 시간(초)에 해당하는 문장 번호 */
@@ -92,7 +98,9 @@ export function PlayerProvider({ children }) {
         speakFrom(i + 1)
       }
       u.onerror = (e) => {
+        
         if (session !== sessionRef.current || e.error === 'interrupted' || e.error === 'canceled') return
+        console.warn('[TTS 에러]', e.error, '| 목소리:', u.voice?.name, '| 문장:', s.text)
         playingRef.current = false
         speakingRef.current = false
         setIsPlaying(false)
