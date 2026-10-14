@@ -288,7 +288,8 @@
 /* ---------- 02 대본 보기 ---------- */
 .script {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  /* minmax(0, 1fr): 긴 기사 제목 같은 내용이 칸을 화면 밖으로 밀어내지 못하게 */
+  grid-template-columns: 320px minmax(0, 1fr);
   gap: 48px;
   align-items: start;
 }
@@ -340,6 +341,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  word-break: keep-all; /* 한국어 단어 중간에서 줄이 끊기지 않게 */
 }
 
 .segment {
@@ -555,9 +557,12 @@
 @media (max-width: 1023px) {
   .today__top,
   .today__bottom,
-  .history__layout,
-  .script {
+  .history__layout {
     grid-template-columns: 1fr;
+  }
+  .script {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
   }
   .script__side {
     position: static;
