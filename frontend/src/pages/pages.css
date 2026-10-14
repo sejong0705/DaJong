@@ -336,32 +336,6 @@
   color: var(--text-inverse);
 }
 
-.toc {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.toc__item {
-  width: 100%;
-  display: flex;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  text-align: left;
-  color: var(--text-secondary);
-}
-.toc__item.is-active {
-  background: var(--accent-soft);
-  color: var(--text-primary);
-  font-weight: 500;
-}
-.toc__time {
-  font-size: var(--fs-caption);
-  font-weight: 500;
-  color: var(--accent-strong);
-  padding-top: 2px;
-}
-
 .script__body {
   display: flex;
   flex-direction: column;
@@ -390,14 +364,28 @@
   font-weight: 500;
   color: var(--accent-strong);
 }
-.segment__time:hover {
-  text-decoration: underline;
-}
-.segment__now {
+/* '여기부터 듣기' 버튼 (카드 오른쪽 위) */
+.segment__play {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
   font-size: var(--fs-caption);
   font-weight: 500;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.segment__play:hover {
+  border-color: var(--accent-default);
   color: var(--accent-strong);
+}
+.segment__play.is-playing {
+  background: var(--accent-default);
+  border-color: var(--accent-default);
+  color: var(--text-inverse);
 }
 .segment__text {
   font-size: 17px;
@@ -426,16 +414,52 @@
   font-size: var(--fs-caption);
   color: var(--accent-strong);
 }
+/* 원문 기사 목록: [매일경제] 기사 제목 › */
 .segment__sources {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  margin-top: 14px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-default);
+}
+.segment__sources > b {
+  display: block;
+  margin-bottom: 6px;
   font-size: var(--fs-caption);
+  color: var(--accent-strong);
+}
+.segment__sources ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 .segment__sources a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  margin: 0 -10px;
+  border-radius: 10px;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+.segment__sources a:hover {
+  background: var(--bg-page);
+}
+.segment__press {
+  flex-shrink: 0;
+  font-weight: 700;
+}
+.segment__source-title {
+  flex: 1;
+  min-width: 0;
   color: var(--text-secondary);
-  text-decoration: underline;
+  /* 제목이 길면 한 줄로 자르고 … 표시 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.segment__sources a > svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
 }
 
 /* ---------- 03 지난 방송 ---------- */

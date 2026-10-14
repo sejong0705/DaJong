@@ -7,6 +7,7 @@ import { getBriefing, getScript } from '../api/briefing'
 import { useAsync } from '../hooks/useAsync'
 import { usePlayer } from '../context/PlayerContext'
 import { dateParts, formatClock, todayKey } from '../utils/date'
+import { pressName } from '../utils/press'
 import './pages.css'
 
 export default function ScriptPage() {
@@ -75,32 +76,26 @@ export default function ScriptPage() {
             </button>
           ))}
         </div>
-
-        <hr className="divider only-desktop-block" />
-        <p className="caption text-secondary only-desktop-block">목차</p>
-        <ol className="toc only-desktop-block">
-          {segments.map((s, i) => (
-            <li key={s.start}>
-              <button type="button" className={`toc__item${i === activeIdx ? ' is-active' : ''}`} onClick={() => playFrom(s.start)}>
-                <span className="toc__time">{formatClock(s.start)}</span>
-                <span>{s.title}</span>
-              </button>
-            </li>
-          ))}
-        </ol>
       </aside>
 
       <div className="script__body">
         {visible.map((s) => {
           const active = s.i === activeIdx
+          // 지금 이 꼭지를 읽는 중이면 버튼은 '일시정지', 아니면 '여기부터 듣기'
+          const speaking = active && player.isPlaying
           return (
             <article key={s.start} className={`segment${active ? ' is-active' : ''}`} aria-current={active ? 'true' : undefined}>
               <div className="segment__meta">
-                <button type="button" className="segment__time" onClick={() => playFrom(s.start)} aria-label={`${formatClock(s.start)}부터 듣기`}>
-                  {formatClock(s.start)}
-                </button>
+                <span className="segment__time">{formatClock(s.start)}</span>
                 <CategoryChip label={s.category} />
-                {active && <span className="segment__now">▶ 재생 중</span>}
+                <button
+                  type="button"
+                  className={`segment__play${speaking ? ' is-playing' : ''}`}
+                  onClick={() => (speaking ? player.pause() : playFrom(s.start))}
+                >
+                  <Icon name={speaking ? 'pause' : 'play'} size={14} />
+                  {speaking ? '일시정지' : '여기부터 듣기'}
+                </button>
               </div>
               {s.points.length > 0 ? (
                 <>
@@ -127,13 +122,21 @@ export default function ScriptPage() {
                 </p>
               )}
               {s.sources.length > 0 && (
-                <p className="segment__sources">
-                  {s.sources.map((src) => (
-                    <a key={src.link} href={src.link} target="_blank" rel="noopener noreferrer">
-                      {src.press || src.title}
-                    </a>
-                  ))}
-                </p>
+                <div className="segment__sources">
+                  <b>원문 기사</b>
+                  <ul>
+                    {s.sources.map((src) => (
+                      <li key={src.link}>
+                        {/* 새 탭에서 원문 열기 */}
+                        <a href={src.link} target="_blank" rel="noopener noreferrer">
+                          <span className="segment__press">{pressName(src.press)}</span>
+                          <span className="segment__source-title">{src.title}</span>
+                          <Icon name="chevronRight" size={16} />
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </article>
           )
