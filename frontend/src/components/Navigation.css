@@ -53,6 +53,25 @@
   color: var(--text-secondary);
 }
 
+/* 'OO님' 닉네임 버튼 */
+.user-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 180px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.user-badge__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .theme-toggle {
   width: 36px;
   height: 36px;
@@ -78,6 +97,14 @@
   .topnav__links,
   .topnav__date {
     display: none;
+  }
+  .topnav__right {
+    gap: 10px;
+  }
+  .user-badge {
+    max-width: 120px;
+    height: 32px;
+    padding: 0 12px;
   }
 
   .bottomnav {
