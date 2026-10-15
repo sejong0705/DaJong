@@ -14,7 +14,7 @@
               "Type": "Task",
               "Resource": "arn:aws:lambda:ap-northeast-2:443370697536:function:sgu-20260918-collect-weather",
               "TimeoutSeconds": 120,
-              "Retry": [{"ErrorEquals": ["States.ALL"], "IntervalSeconds": 10, "MaxAttempts": 2, "BackoffRate": 2}],
+              "Retry": [{"ErrorEquals": ["States.ALL"], "IntervalSeconds": 300, "MaxAttempts": 3, "BackoffRate": 1.5}],
               "End": true
             }
           }

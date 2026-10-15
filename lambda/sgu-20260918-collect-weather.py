@@ -47,6 +47,10 @@ PERIODS = {
 }
  
  
+class NoDataError(RuntimeError):
+    """기상청이 해당 발표시각 데이터를 아직(또는 일시적으로) 주지 않음 (resultCode 03)."""
+
+
 def latest_base(now):
     """지금 시점에 조회 가능한 가장 최근 발표 일자/시각."""
     t = now - timedelta(minutes=15)
@@ -56,8 +60,17 @@ def latest_base(now):
         return t.strftime("%Y%m%d"), available[-1]
     prev = t - timedelta(days=1)
     return prev.strftime("%Y%m%d"), "2300"
- 
- 
+
+
+def previous_base(base_date, base_time):
+    """바로 이전 발표 일자/시각. 0200의 이전은 전날 2300."""
+    i = BASE_TIMES.index(base_time)
+    if i > 0:
+        return base_date, BASE_TIMES[i - 1]
+    prev = datetime.strptime(base_date, "%Y%m%d") - timedelta(days=1)
+    return prev.strftime("%Y%m%d"), BASE_TIMES[-1]
+
+
 def fetch_items(service_key, base_date, base_time, nx, ny, retries=2):
     params = urllib.parse.urlencode({
         "serviceKey": service_key,
@@ -79,9 +92,14 @@ def fetch_items(service_key, base_date, base_time, nx, ny, retries=2):
                 raw = resp.read().decode("utf-8")
             data = json.loads(raw)
             header = data["response"]["header"]
+            if header["resultCode"] == "03":
+                # 같은 발표시각을 몇 초 뒤 다시 불러도 소용없으므로 바로 넘긴다
+                raise NoDataError(f"기상청 오류 03: {header['resultMsg']} ({base_date} {base_time})")
             if header["resultCode"] != "00":
                 raise RuntimeError(f"기상청 오류 {header['resultCode']}: {header['resultMsg']}")
             return data["response"]["body"]["items"]["item"]
+        except NoDataError:
+            raise
         except json.JSONDecodeError:
             # 서비스키가 틀리거나 아직 활성화 전이면 JSON이 아니라 XML 에러가 온다
             last_err = RuntimeError(f"JSON 응답 아님(서비스키 확인 필요): {raw[:200]}")
@@ -167,9 +185,21 @@ def lambda_handler(event, context):
     target = pick_target_date(now, event)
     target_date = target.strftime("%Y%m%d")
     base_date, base_time = latest_base(now)
- 
-    # 서울 1곳뿐이라 실패하면 그대로 에러 → Step Functions에서 재시도
-    items = fetch_items(service_key, base_date, base_time, REGION["nx"], REGION["ny"])
+
+    # NO_DATA(03)면 이전 발표분으로 최대 2번 내려가 본다
+    # (예: 0500 → 0200 → 전날 2300, 모두 오늘 하루 예보를 포함)
+    # 그래도 실패하면 에러 → Step Functions Retry가 몇 분 뒤 다시 실행
+    for _ in range(3):
+        try:
+            items = fetch_items(service_key, base_date, base_time, REGION["nx"], REGION["ny"])
+            break
+        except NoDataError as e:
+            print(f"[WARN] {e} → 이전 발표분으로 재시도")
+            last_err = e
+            base_date, base_time = previous_base(base_date, base_time)
+    else:
+        raise last_err
+
     seoul = {"key": REGION["key"], "name": REGION["name"], **summarize(items, target_date)}
  
     return {
