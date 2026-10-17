@@ -13,6 +13,7 @@
 // 음성은 브라우저 speechSynthesis 가 timeline 의 문장들을 읽어요 (PlayerContext 참고).
 
 import { mockGet, mockList } from './mock'
+import { getCachedUser } from './user'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
@@ -69,13 +70,25 @@ function splitSentences(text = '') {
 }
 
 /**
+ * 오프닝 멘트. 대본은 모두에게 하나라서 인사의 이름 자리가 {nickname} 으로 비어 있어요.
+ *   greeting: "안녕하세요, {nickname}님. 2026년 10월 17일 금요일입니다."  + body: 본문
+ * 로그인한 닉네임을 넣어 "안녕하세요, 세종님. …" 으로 만들어요.
+ * greeting 이 없는 예전 방송이거나 닉네임이 없으면 공용 speech 를 그대로 써요.
+ */
+function openingText(opening = {}) {
+  const nickname = getCachedUser()?.nickname
+  if (!opening.greeting || !nickname) return opening.speech
+  return `${opening.greeting.replaceAll('{nickname}', nickname)} ${opening.body ?? ''}`.trim()
+}
+
+/**
  * script.json → 재생 순서대로 나눈 파트 목록
  * parts: [{ key, category, title, start, end, sentences: [{ text, start, end }], segment? }]
  */
 export function buildTimeline(script, region = DEFAULT_REGION) {
   const weather = script.weather?.[region] ?? Object.values(script.weather ?? {})[0]
   const raw = [
-    { key: 'opening', category: '오프닝', title: '오프닝', text: script.opening?.speech },
+    { key: 'opening', category: '오프닝', title: '오프닝', text: openingText(script.opening) },
     weather && { key: 'weather', category: '날씨', title: weather.summary || `${weather.name} 날씨`, text: weather.speech },
     ...(script.segments ?? []).map((s) => ({ key: s.id, category: s.category, title: s.headline, text: s.speech, segment: s })),
     { key: 'closing', category: '클로징', title: '클로징', text: script.closing?.speech },
