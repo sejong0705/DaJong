@@ -34,6 +34,13 @@ const NEWS = [
   },
 ]
 
+/** write-script 와 같은 형태: 인사(이름 자리 {nickname}) + 본문 + 공용 speech */
+function openingFor(date) {
+  const today = `${date.slice(0, 4)}년 ${formatLongDate(date)}입니다.`
+  const body = '오늘 아침 주요 소식 전해드릴게요.'
+  return { greeting: `안녕하세요, {nickname}님. ${today}`, body, speech: `안녕하세요. ${today} ${body}` }
+}
+
 function makeScript(date, i) {
   const segments = NEWS.map((n, k) => {
     const lead = k === 0 ? '오늘의 톱뉴스입니다.' : `${n.category.replace('/', ', ')} 소식입니다.`
@@ -49,7 +56,7 @@ function makeScript(date, i) {
     date,
     date_label: formatLongDate(date),
     title: TITLES[i % TITLES.length],
-    opening: { speech: `좋은 아침입니다. ${formatLongDate(date)}, 던에어입니다. 오늘의 주요 소식 전해드릴게요.` },
+    opening: openingFor(date),
     weather: {
       seoul: {
         name: '서울', temp_min: 12, temp_max: 23, pop: 20,

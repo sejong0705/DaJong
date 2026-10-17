@@ -87,7 +87,9 @@ SYSTEM_NEWS = """당신은 아침 라디오 '던에어(DawnAir)'의 뉴스 편�
 - 본문 안에 그 사건과 관계없는 문단(같은 인물의 다른 일정, 기사 끝 관련 소식 등)이 섞여 있으면 무시할 것. background는 반드시 이 사건이 왜 일어났는지에 대한 내용이어야 함
 
 오프닝·클로징
-- opening: 날짜·요일 인사 + 오늘 주요 뉴스 예고, 3~4문장. 날씨 언급은 하지 말 것 (날씨 코너가 따로 있음)
+- opening: 오늘 주요 뉴스 예고, 2~3문장. "오늘 아침 주요 뉴스를 전해드리겠습니다."처럼 바로 본론으로 시작할 것
+  인사말("좋은 아침입니다", "안녕하세요")과 날짜·요일은 쓰지 말 것 (청취자 이름을 넣은 인사가 방송 앞에 자동으로 붙음)
+  날씨 언급도 하지 말 것 (날씨 코너가 따로 있음)
 - closing: 2문장, 따뜻한 마무리
 - title: 오늘 방송 제목 (톱뉴스를 반영, 25자 이내)
 
@@ -254,6 +256,19 @@ def speech(*parts):
     return " ".join(p.strip() for p in parts if p and p.strip())
 
 
+# 오프닝 인사: 대본은 모두에게 하나라서, 청취자 이름 자리는 {nickname} 으로 비워 두고
+# 프론트가 재생할 때 로그인한 닉네임으로 바꿔 넣는다.
+GREETING_RE = re.compile(r"^(좋은 아침|안녕하세요|안녕하십니까|반갑습니다|\d{4}년|\d{1,2}월\s*\d{1,2}일)")
+
+
+def opening_body(text):
+    """LLM이 프롬프트와 달리 인사·날짜 문장을 앞에 넣었으면 떼어낸다."""
+    sentences = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    while sentences and GREETING_RE.match(sentences[0]):
+        sentences.pop(0)
+    return " ".join(sentences)
+
+
 def build_segment(seg_id, kind, category, raw, pool):
     ids = [i for i in raw.get("ids", []) if i in pool]
     sources, seen = [], set()
@@ -312,7 +327,13 @@ def lambda_handler(event, context):
     for i, s in enumerate(n["segments"], 1):
         segments.append(build_segment(f"s{i}", "news", s["category"], s, pool))
 
-    opening = n["opening"]
+    # 오프닝 = 인사(코드가 만듦) + 본문(LLM)
+    #   greeting : "안녕하세요, {nickname}님. 2026년 10월 17일 금요일입니다."  ← 프론트가 닉네임으로 치환
+    #   speech   : 닉네임 없는 공용 버전 (Polly 음성 · 예전 화면용)
+    today = f"{date.year}년 {date_label}입니다."
+    body = opening_body(n["opening"])
+    greeting = f"안녕하세요, {{nickname}}님. {today}"
+    opening = speech("안녕하세요.", today, body)
     closing = n["closing"]
     news_seconds = sum(s["duration_estimate"] for s in segments)
     avg_weather = round(sum(len(v["speech"]) for v in weather_out.values())
@@ -322,7 +343,12 @@ def lambda_handler(event, context):
         "date": weather["date"],
         "date_label": date_label,
         "title": n["title"],
-        "opening": {"speech": opening, "duration_estimate": round(len(opening) / CHARS_PER_SEC)},
+        "opening": {
+            "speech": opening,
+            "greeting": greeting,
+            "body": body,
+            "duration_estimate": round(len(opening) / CHARS_PER_SEC),
+        },
         "weather": weather_out,          # 프론트에서 지역 key로 골라 재생
         "segments": segments,            # 톱뉴스 → 카테고리 뉴스 순서
         "closing": {"speech": closing, "duration_estimate": round(len(closing) / CHARS_PER_SEC)},
