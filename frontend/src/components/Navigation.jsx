@@ -1,10 +1,10 @@
 // 피그마 TopNav(데스크톱) / BottomNav(모바일)
 // 768px 기준으로 CSS 에서 둘 중 하나만 보여요.
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import Icon from './Icon'
 import Logo from './Logo'
-import NicknameScreen from './NicknameScreen'
+import NicknameEditDialog from './NicknameEditDialog'
 import { useUser } from '../context/UserContext'
 import { formatLongDate, todayKey } from '../utils/date'
 import './Navigation.css'
@@ -60,13 +60,14 @@ export function BottomNav() {
 export function UserBadge() {
   const { user } = useUser()
   const [editing, setEditing] = useState(false)
+  const closeEditor = useCallback(() => setEditing(false), [])
   if (!user) return null
   return (
     <>
       <button type="button" className="user-badge" onClick={() => setEditing(true)} title="닉네임 바꾸기">
         <span className="user-badge__name">{user.nickname}</span>님
       </button>
-      {editing && <NicknameScreen onClose={() => setEditing(false)} />}
+      {editing && <NicknameEditDialog onClose={closeEditor} />}
     </>
   )
 }

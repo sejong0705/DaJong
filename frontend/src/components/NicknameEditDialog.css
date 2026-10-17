@@ -1,0 +1,250 @@
+/* 닉네임 수정 팝업 */
+.nick-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 70; /* 방송 화면(50) · 첫 닉네임 화면(60) 위 */
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(20, 18, 30, 0.45);
+  backdrop-filter: blur(4px);
+  animation: nick-fade 0.2s ease;
+}
+
+.nick-dialog__panel {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  padding: 36px 28px 24px;
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: 0 24px 64px rgba(20, 18, 30, 0.25);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: nick-pop 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.nick-dialog__handle {
+  display: none;
+}
+
+.nick-dialog__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+.nick-dialog__close:hover {
+  background: var(--bg-page);
+  color: var(--text-primary);
+}
+
+/* 닉네임 첫 글자 동그라미 (로고 orb 색) */
+.nick-dialog__avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 36% 32%, var(--orb-1) 0%, var(--orb-2) 42%, var(--orb-3) 80%, var(--orb-4) 100%);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--orb-glow) 45%, transparent);
+  color: #5a2e1f;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.nick-dialog__title {
+  margin-top: 16px;
+  font-size: var(--fs-display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.nick-dialog__desc {
+  margin-top: 6px;
+  color: var(--text-secondary);
+}
+.nick-dialog__desc b {
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+/* 입력창 */
+.nick-dialog__field {
+  position: relative;
+  margin-top: 24px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  height: 54px;
+  padding: 0 12px 0 16px;
+  border-radius: 16px;
+  border: 1.5px solid var(--border-default);
+  background: var(--bg-page);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.nick-dialog__field:focus-within {
+  border-color: var(--accent-default);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-default) 18%, transparent);
+}
+.nick-dialog__field.is-error {
+  border-color: var(--accent-strong);
+}
+.nick-dialog__field-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.nick-dialog__field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-subtitle); /* 16px 이상: iOS 자동 확대 방지 */
+  font-weight: 500;
+  outline: none;
+}
+.nick-dialog__clear {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--border-default);
+  color: var(--text-secondary);
+}
+
+.nick-dialog__meta {
+  width: 100%;
+  min-height: 20px;
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+.nick-dialog__error,
+.nick-dialog__meta .is-error {
+  color: var(--accent-strong);
+}
+
+/* 방송 인사 미리 보기 */
+.nick-dialog__preview {
+  margin-top: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  text-align: left;
+}
+.nick-dialog__preview-label {
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  color: var(--accent-strong);
+}
+.nick-dialog__preview p {
+  margin-top: 4px;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.nick-dialog__preview b {
+  color: var(--accent-strong);
+}
+
+/* 버튼 */
+.nick-dialog__actions {
+  margin-top: 20px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 10px;
+}
+.nick-dialog__btn {
+  height: 52px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: var(--fs-subtitle);
+  font-weight: 700;
+  transition: transform 0.1s, background 0.2s, opacity 0.2s;
+}
+.nick-dialog__btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.nick-dialog__btn--ghost {
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.nick-dialog__btn--primary {
+  background: var(--accent-default);
+  color: #fff;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent-default) 35%, transparent);
+}
+.nick-dialog__btn--primary:disabled {
+  opacity: 0.4;
+  box-shadow: none;
+  cursor: default;
+}
+.nick-dialog__btn--primary.is-done {
+  background: #2f9e6a;
+  box-shadow: 0 6px 18px rgba(47, 158, 106, 0.35);
+}
+
+@keyframes nick-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes nick-pop {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+}
+
+/* 모바일: 아래에서 올라오는 시트 */
+@media (max-width: 767px) {
+  .nick-dialog {
+    place-items: end stretch;
+    padding: 0;
+  }
+  .nick-dialog__panel {
+    max-width: none;
+    padding: 12px 20px calc(20px + env(safe-area-inset-bottom));
+    border-radius: 24px 24px 0 0;
+    animation-name: nick-sheet;
+  }
+  .nick-dialog__handle {
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin-bottom: 20px;
+    border-radius: 2px;
+    background: var(--border-default);
+  }
+  .nick-dialog__close {
+    top: 10px;
+  }
+  @keyframes nick-sheet {
+    from {
+      transform: translateY(100%);
+    }
+  }
+}

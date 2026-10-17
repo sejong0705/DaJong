@@ -50,6 +50,14 @@ const PATHS = {
   chevronLeft: <path d="m15 18-6-6 6-6" />,
   chevronRight: <path d="m9 18 6-6-6-6" />,
   chevronDown: <path d="m6 9 6 6 6-6" />,
+  close: <path d="M6 6l12 12M18 6 6 18" />,
+  check: <path d="m5 12.5 4.5 4.5L19 7.5" />,
+  edit: (
+    <>
+      <path d="M4 20h4L19 9a2.1 2.1 0 0 0-4-4L4 16z" />
+      <path d="m13.5 6.5 4 4" />
+    </>
+  ),
   sun: (
     <>
       <circle cx="12" cy="12" r="4" />
